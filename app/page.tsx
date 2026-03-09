@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
+import { pusherClient } from "@/lib/pusher";
 
 export default function LandingPage() {
   const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
@@ -22,6 +23,20 @@ export default function LandingPage() {
 
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+  const channel = pusherClient.subscribe('stream-channel');
+
+  channel.bind('test-event', (data: { message: string }) => {
+    // Aquí puedes hacer que el contador brille, cambie de color o salga un alert
+    alert(data.message);
+    console.log("Evento recibido:", data.message);
+  });
+
+  return () => {
+    pusherClient.unsubscribe('stream-channel');
+  };
+}, []);
 
   return (
     <main className="min-h-screen bg-background bg-grid flex flex-col items-center justify-center p-6 font-sans">
