@@ -33,4 +33,4 @@ sequenceDiagram
     T->>V: Webhook: New Subscription
     V->>V: Calculate New Price (-$30 / -$15)
     V->>P: Trigger Event 'price-update'
-    P->>O: Update UI in Real-time
+    P->>O: Update UI in Real-time 
