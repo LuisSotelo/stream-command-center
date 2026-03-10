@@ -47,7 +47,8 @@ export default function LandingPage() {
         className="text-center z-10"
       >
         <h1 className="text-brand-purple text-5xl md:text-7xl font-bold mb-4 drop-shadow-[0_0_15px_rgba(145,70,255,0.3)]">
-          LUISHONGO_
+          LUISHONGO
+          <span className="animate-cursor-blink">_</span>
         </h1>
         <p className="text-brand-cyan font-mono text-sm tracking-[0.3em] mb-12 uppercase">
           System Reboot // 16.03.2026
