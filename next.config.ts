@@ -4,11 +4,11 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        source: '/(:path*)',
+        source: '/(.*)',
         headers: [
           {
             key: 'Content-Security-Policy',
-            value: "script-src 'self' 'unsafe-eval' 'unsafe-inline' *.pusher.com;",
+            value: "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://js.pusher.com; object-src 'none';",
           },
         ],
       },

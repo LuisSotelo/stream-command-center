@@ -8,18 +8,11 @@ const handler = NextAuth({
       clientSecret: process.env.TWITCH_CLIENT_SECRET!,
     }),
   ],
+  // Eliminamos el objeto "pages" para usar las default de NextAuth
   callbacks: {
-    async signIn({ user, account, profile }) {
-      // EL FILTRO DE SEGURIDAD: Solo tu ID de Twitch puede entrar
-      // Puedes usar tu email o el ID numérico que definimos en el .env
-      if (profile?.sub === process.env.AUTHORIZED_TWITCH_ID) {
-        return true;
-      }
-      return false; // El resto del mundo rebota aquí
+    async signIn({ profile }) {
+      return profile?.sub === process.env.AUTHORIZED_TWITCH_ID;
     },
-  },
-  pages: {
-    error: '/auth/error',
   },
 });
 
