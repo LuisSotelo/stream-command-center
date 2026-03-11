@@ -19,7 +19,6 @@ const handler = NextAuth({
     },
   },
   pages: {
-    signIn: '/auth/signin', // Luego crearemos una personalizada
     error: '/auth/error',
   },
 });
