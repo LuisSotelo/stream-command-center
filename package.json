@@ -9,6 +9,8 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@number-flow/react": "^0.6.0",
+    "@upstash/redis": "^1.36.4",
     "framer-motion": "^12.35.2",
     "next": "16.1.6",
     "next-auth": "^4.24.13",

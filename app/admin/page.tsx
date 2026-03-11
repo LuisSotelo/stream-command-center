@@ -1,9 +1,25 @@
 "use client";
 import { useSession, signOut } from "next-auth/react";
-import { motion } from "framer-motion";
 
 export default function AdminDashboard() {
   const { data: session } = useSession();
+
+  // Función para bajar el precio
+  const handleDiscount = async (amount: number) => {
+    try {
+      const response = await fetch("/api/price", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount }),
+      });
+
+      if (response.ok) {
+        console.log(`Descuento de $${amount} aplicado con éxito`);
+      }
+    } catch (error) {
+      console.error("Error al aplicar descuento:", error);
+    }
+  };
 
   return (
     <main className="min-h-screen bg-[#0a0a0a] text-white p-8 font-mono">
@@ -29,10 +45,14 @@ export default function AdminDashboard() {
           <h2 className="text-sm mb-6 text-brand-cyan tracking-widest">REVERSE_AUCTION_CONTROL</h2>
           
           <div className="flex flex-col gap-4">
-            <button className="w-full py-4 bg-brand-purple/20 border border-brand-purple rounded-lg hover:bg-brand-purple/40 transition-all font-bold text-lg active:scale-95">
+            <button 
+              onClick={() => handleDiscount(30)}
+              className="w-full py-4 bg-brand-purple/20 border border-brand-purple rounded-lg hover:bg-brand-purple/40 transition-all font-bold text-lg active:scale-95">
               SUB_DETECTED (-$30 MXN)
             </button>
-            <button className="w-full py-4 bg-brand-cyan/20 border border-brand-cyan rounded-lg hover:bg-brand-cyan/40 transition-all font-bold text-lg text-brand-cyan active:scale-95">
+            <button 
+              onClick={() => handleDiscount(15)}
+              className="w-full py-4 bg-brand-cyan/20 border border-brand-cyan rounded-lg hover:bg-brand-cyan/40 transition-all font-bold text-lg text-brand-cyan active:scale-95">
               BITS_DETECTED (-$15 MXN)
             </button>
           </div>
