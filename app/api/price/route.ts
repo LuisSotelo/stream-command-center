@@ -1,26 +1,36 @@
 import { NextResponse } from "next/server";
-import { redis } from "@/lib/redis"; // Nuestra conexión a Redis
-import { pusherServer } from "@/lib/pusher"; // Usaremos el server de Pusher para avisar a todos
-
-export async function GET() {
-  const price = await redis.get("current_price") || 1200; // Precio inicial por defecto
-  return NextResponse.json({ price });
-}
+import { redis } from "@/lib/redis"; // Tu instancia de Redis
+import { pusherServer } from "@/lib/pusher";
 
 export async function POST(req: Request) {
-  const { amount } = await req.json(); // Cantidad a restar: 30 o 15
-  
-  // 1. Obtener precio actual y restar
-  const currentPrice: number = await redis.get("current_price") || 1200;
-  const newPrice = Math.max(0, currentPrice - amount); // Que no baje de 0
-  
-  // 2. Guardar en Redis
-  await redis.set("current_price", newPrice);
-  
-  // 3. ¡MAGIA! Avisar a Pusher para que todas las pantallas se actualicen
-  await pusherServer.trigger("stream-channel", "price-updated", {
-    newPrice: newPrice
-  });
+  // 1. REVISAR EL SWITCH DE SEGURIDAD
+  // Solo permitimos cambios si la variable de entorno dice que estamos LIVE
+  const isLive = process.env.NEXT_PUBLIC_STREAM_ACTIVE === "true";
 
-  return NextResponse.json({ success: true, newPrice });
+  if (!isLive) {
+    return NextResponse.json(
+      { error: "La subasta no está activa. Solo se puede bajar el precio durante el stream." },
+      { status: 403 }
+    );
+  }
+
+  // 2. LÓGICA DE DESCUENTO (Si está live, procedemos)
+  try {
+    const { amount } = await req.json(); // p.ej. 10 para $10 pesos
+    
+    // Obtenemos precio actual, restamos y guardamos en Redis
+    const currentPrice = await redis.get("current_price");
+    const newPrice = Number(currentPrice) - amount;
+
+    await redis.set("current_price", newPrice);
+
+    // Avisamos a la Landing por Pusher
+    await pusherServer.trigger("auction-channel", "price-update", {
+      price: newPrice,
+    });
+
+    return NextResponse.json({ success: true, newPrice });
+  } catch (error) {
+    return NextResponse.json({ error: "Error al actualizar" }, { status: 500 });
+  }
 }
