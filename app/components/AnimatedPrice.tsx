@@ -23,6 +23,7 @@ export function AnimatedPrice({ price }: { price: number }) {
       setShowHype(true);
       if (audioRef.current) {
         audioRef.current.currentTime = 0;
+        audioRef.current.volume = 0.4; // Bajamos un poco el volumen para que no aturda
         audioRef.current.play().catch(() => {});
       }
       const timer = setTimeout(() => setShowHype(false), 1200);

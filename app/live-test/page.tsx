@@ -28,7 +28,8 @@ export default function LandingPage() {
         setPrice(Number(incomingPrice));
         
         // Sonido de éxito
-        const audio = new Audio("/sounds/cash-register.mp3");
+        const audio = new Audio("/sounds/casino-win.mp3");
+        audio.volume = 0.4; // Bajamos un poco el volumen para que no aturda
         audio.play().catch(e => console.log("Audio bloqueado por el navegador:", e));
         
         console.log(`¡Precio actualizado por ${data.user || 'Sistema'}: $${incomingPrice}`);
