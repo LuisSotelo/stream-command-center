@@ -6,7 +6,7 @@ export async function POST() {
     // Restauramos los valores iniciales
     await redis.set("auction_status", "active");
     await redis.set("auction_price", "1200"); // O tu precio inicial
-    await redis.set("game_progress", "0");
+    await redis.set("stream_game_progress", "0");
     
     // Opcional: Podrías borrar la bandera de precio final si la usaste
     await redis.del("final_price_achieved");

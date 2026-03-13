@@ -67,6 +67,9 @@ export async function POST(req: Request) {
       case 'SUB':
         discount = level.rates.sub;
         break;
+      case 'PRIME':
+        discount = level.rates.prime;
+        break;
       case 'BITS_100':
         discount = level.rates.bits100;
         break;
