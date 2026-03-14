@@ -27,6 +27,7 @@ export default function AdminDashboard() {
   const isLiveRef = useRef(isLive);
   const currentPriceRef = useRef(currentPrice);
 
+  // Sincronizamos los refs cada vez que cambian estas variables para que el bot siempre tenga la info actualizada
   useEffect(() => {
     levelRef.current = level;
     isLiveRef.current = isLive;
@@ -39,8 +40,7 @@ export default function AdminDashboard() {
     audio.play().catch(() => console.log("🔊 Sonido bloqueado."));
   };
 
-  // --- 1. ÚNICO EFECTO DE SINCRONIZACIÓN (Pusher, Logs y Datos Iniciales) ---
-  useEffect(() => {
+    // --- 1. FUNCIÓN DE CARGA DE DATOS (Centralizada) ---
     const fetchData = async () => {
       try {
         const [logsRes, statusRes, priceRes, progRes, mlRes] = await Promise.all([
@@ -48,7 +48,7 @@ export default function AdminDashboard() {
           fetch("/api/twitch/status"),
           fetch("/api/price"),
           fetch("/api/game-progress"),
-          fetch("/api/ml/status")
+          fetch("/api/ml/status"),
         ]);
 
         const logsData = logsRes.ok ? await logsRes.json() : { success: false, logs: [] };
@@ -57,14 +57,11 @@ export default function AdminDashboard() {
         const progData = progRes.ok ? await progRes.json() : { success: false };
         const mlData = mlRes.ok ? await mlRes.json() : { status: "OFFLINE" };
 
-
         if (logsData.success) setLogs(logsData.logs);
         setIsLive(statusData.isLive);
         setTwitchStatus(statusData.connection);
         if (priceData.newPrice) setCurrentPrice(priceData.newPrice);
         if (progData.success) setProgress(progData.progress);
-        
-        // Seteamos el estatus de ML
         setMlStatus(mlData.status || "OFFLINE");
       } catch (error) {
         console.error("Error sincronizando dashboard:", error);
@@ -75,26 +72,27 @@ export default function AdminDashboard() {
       }
     };
 
-    if (status === "authenticated") {
-      fetchData();
+    useEffect(() => {
+      if (status === "authenticated") {
+        fetchData();
 
-      const channel = pusherClient.subscribe("auction-channel");
-      
-      // Actualizar Backlog en vivo
-      channel.bind("admin-log-update", (newLog: any) => {
-        setLogs((prev) => [newLog, ...prev].slice(0, 20));
-      });
+        const channel = pusherClient.subscribe("auction-channel");
+        
+        // Actualizar Backlog en vivo
+        channel.bind("admin-log-update", (newLog: any) => {
+          setLogs((prev) => [newLog, ...prev].slice(0, 20));
+        });
 
-      // Sincronizar precio si alguien más (o Twitch) lo mueve
-      channel.bind("price-update", (data: any) => {
-        if (data.newPrice) setCurrentPrice(data.newPrice);
-      });
+        // Sincronizar precio si alguien más (o Twitch) lo mueve
+        channel.bind("price-update", (data: any) => {
+          if (data.newPrice) setCurrentPrice(data.newPrice);
+        });
 
-      return () => {
-        pusherClient.unsubscribe("auction-channel");
-      };
-    }
-  }, [status]);
+        return () => {
+          pusherClient.unsubscribe("auction-channel");
+        };
+      }
+    }, [status]);
 
   // --- 2. LÓGICA DEL BOT (JOAQUÍN) ---
   useEffect(() => {
@@ -458,19 +456,19 @@ export default function AdminDashboard() {
             </button>
 
             <h3 className="text-[10px] text-gray-500 tracking-widest uppercase mb-4">Admin_Activity_Log</h3>
-          <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
-            {logs.map((log, i) => (
-              <div key={i} className="text-[9px] font-mono flex justify-between border-b border-white/5 pb-1">
-                <span className={log.admin === "Sistema/Twitch" ? "text-brand-cyan" : "text-brand-purple"}>
-                  [{log.admin.toUpperCase()}]
-                </span>
-                <span className="text-gray-400">{log.action} (-${log.amount})</span>
-                <span className="text-[8px] text-gray-600">
-                  {new Date(log.timestamp).toLocaleTimeString()}
-                </span>
-              </div>
-            ))}
-          </div>
+            <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+              {logs.map((log, i) => (
+                <div key={i} className="text-[9px] font-mono flex justify-between border-b border-white/5 pb-1">
+                  <span className={log.admin === "Sistema/Twitch" ? "text-brand-cyan" : "text-brand-purple"}>
+                    [{log.admin.toUpperCase()}]
+                  </span>
+                  <span className="text-gray-400">{log.action} (-${log.amount})</span>
+                  <span className="text-[8px] text-gray-600">
+                    {new Date(log.timestamp).toLocaleTimeString()}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
