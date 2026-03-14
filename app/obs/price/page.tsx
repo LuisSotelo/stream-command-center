@@ -103,20 +103,28 @@ export default function ObsPriceOverlay() {
 
     // --- ESCUCHAR CONTEO FINAL ---
     channel.bind("start-countdown", (data: any) => {
-      setCountdown(data.seconds);
+      const totalSeconds = data.seconds;
+      setCountdown(totalSeconds);
       setIsVisible(true);
       
       new Audio("/sounds/suspense-countdown.mp3").play().catch(() => {});
 
       const timer = setInterval(() => {
         setCountdown((prev) => {
-          if (prev !== null && prev > 1) return prev - 1;
+          // Si el contador es mayor a 0, restamos
+          if (prev !== null && prev > 0) return prev - 1;
+          
+          // Cuando ya llegó a 0, limpiamos el intervalo
           clearInterval(timer);
           return 0;
         });
       }, 1000);
 
-      setTimeout(() => setIsFinished(true), (data.seconds * 1000));
+      // IMPORTANTE: Le sumamos 1 segundo (o 1.5s) al total del anuncio 
+      // para que el "GO!" o el "0" se queden grabados en la retina antes del SOLD OUT
+      setTimeout(() => {
+        setIsFinished(true);
+      }, (totalSeconds + 1) * 1000);
     });
 
     return () => {

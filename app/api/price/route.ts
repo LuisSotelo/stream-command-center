@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { redis } from "@/lib/redis";
 import { pusherServer } from "@/lib/pusher";
-import { getServerSession } from "next-auth"; // Necesario para validar quién llama a la API
+import { getServerSession } from "next-auth";
 import { getCurrentLevel } from "@/lib/auction-logic";
 
 export async function GET() {
@@ -26,97 +26,112 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  // 1. Validar la sesión del usuario (Seguridad Real)
+  // 1. Validaciones de Seguridad
   const session = await getServerSession();
   const userId = (session as any)?.user?.id;
-  
+  const twitchToken = req.headers.get("x-twitch-secret");
+
   const isOwner = userId === process.env.AUTHORIZED_TWITCH_ID;
   const isLive = process.env.NEXT_PUBLIC_STREAM_ACTIVE === "true";
   const minPrice = Number(process.env.NEXT_PUBLIC_MIN_PRICE) || 0;
 
-  // 2. Intentar obtener el Token de Twitch (para el futuro webhook)
-  const twitchToken = req.headers.get("x-twitch-secret");
-
-  // 3. Bloquear si no es ni sesión válida ni Twitch
   if (!session && twitchToken !== process.env.TWITCH_WEBHOOK_SECRET) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // 4. BLOQUEO: Solo deja pasar si está LIVE o si eres el DUEÑO probando
   if (!isLive && !isOwner) {
-    return NextResponse.json(
-      { error: "Subasta inactiva para moderadores." },
-      { status: 403 }
-    );
+    return NextResponse.json({ error: "Subasta inactiva." }, { status: 403 });
   }
 
   try {
-    const { type, user } = await req.json(); 
+    const { type, amount, user } = await req.json(); 
     const currentPriceRaw = await redis.get("auction_price");
     const currentPrice = currentPriceRaw ? Number(currentPriceRaw) : 1200;
 
     const level = getCurrentLevel(currentPrice);
     
     let discount = 0;
+    let joaquinComment = "";
+    const culiacanQuotes = [
+      "servirá para el sushi más obsceno que haya visto Culiacán. Provecho, Luis.",
+      "va directo al fondo de ahorro para los tacos de LuisHongo. Los mortales necesitan proteína.",
+      "es un gran paso para la dieta de Seta y Bolillo. Las croquetas no caen del cielo.",
+      "financiará mi copia de Resident Evil Requiem mientras ustedes pelean por centavos.",
+      ", gracias por la limosna, mortal. Luis lo usará para un aguachile bien picoso.",
+      "es una contribución aceptable... para que Luis compre una coquita bien helada."
+    ];
+
+    // 2. Determinar Descuento
     switch (type) {
       case 'SUB': discount = level.rates.sub; break;
       case 'PRIME': discount = level.rates.prime; break;
       case 'BITS_100': discount = level.rates.bits100; break;
       case 'BITS_500': discount = level.rates.bits500; break;
       case 'BITS_1000': discount = level.rates.bits1000; break;
+      case 'BITS_TROLL':
+        discount = 0;
+        const randomQuote = culiacanQuotes[Math.floor(Math.random() * culiacanQuotes.length)];
+        joaquinComment = `🤖 [JOAQUÍN]: Gracias por tu benevolente contribución de ${amount} bits, @${user}. Eso ${randomQuote} 🐷✨`;
+        break;
       default: discount = 0;
     }
 
+    // 3. Lógica de Precios y Eventos Especiales
     let newPrice = currentPrice - discount;
-    const discountAmount = Number(discount);
-
-    // 1. Guardar en el TOP (Solo una vez)
-    if (user && user !== "Admin") {
-      await redis.zincrby("auction_top", discountAmount, user);
-      await redis.set("auction_last_hit", user);
-    }
-
-    // 2. Lógica de EVENTOS SORPRESA (Antes de notificar)
     let specialEvent = null;
-    if (level.event && newPrice <= level.event.triggerPrice) {
-      newPrice -= level.event.amount;
-      specialEvent = {
-        name: level.event.name,
-        amount: level.event.amount // Usamos 'amount' para que el Front-End lo lea bien
-      };
+
+    // Solo procesamos cambios si hay descuento real
+    if (discount > 0) {
+      // Verificar Evento Sorpresa (Level Event)
+      if (level.event && newPrice <= level.event.triggerPrice) {
+        newPrice -= level.event.amount;
+        specialEvent = {
+          name: level.event.name,
+          amount: level.event.amount
+        };
+      }
+
+      if (newPrice < minPrice) newPrice = minPrice;
+
+      // Persistencia en Redis (Precio y Top)
+      await redis.set("auction_price", newPrice);
+      if (user && user !== "Admin") {
+        await redis.zincrby("auction_top", discount, user);
+        await redis.set("auction_last_hit", user);
+      }
     }
 
-    if (newPrice < minPrice) newPrice = minPrice;
+    // 4. Logging de Auditoría
+    const logEntry = {
+      admin: type === 'BITS_TROLL' ? "Sistema/Joaquín" : (twitchToken ? "Sistema/Twitch" : (session?.user?.name || "Admin")),
+      action: type,
+      amount: discount,
+      user: user || "Anónimo",
+      timestamp: new Date().toISOString(),
+    };
+    await redis.lpush("admin_logs", JSON.stringify(logEntry));
+    await redis.ltrim("admin_logs", 0, 19);
 
-    // 3. Persistencia en Redis
-    await redis.set("auction_price", newPrice);
+    // 5. Triggers de Pusher (Notificaciones en tiempo real)
+    
+    // Si Joaquín tiene algo que decir (Trolleo)
+    if (joaquinComment) {
+      await pusherServer.trigger("auction-channel", "joaquin-troll", { message: joaquinComment });
+    }
 
-    // 4. ÚNICO TRIGGER DE PUSHER (Notificamos todo el paquete de datos)
+    // Actualizar Landing, OBS y Dashboard
     await pusherServer.trigger("auction-channel", "price-update", {
       newPrice,
       user: user || "Anónimo",
       type,
-      amount: discountAmount, // Cantidad que bajó originalmente
+      amount: discount,
       levelName: level.name,
-      specialEvent // Si es null, no pasa nada. Si existe, explota el HYPE
+      specialEvent
     });
 
-    // 5. LOGGING (Opcional, para tener un historial de acciones)
-    const logEntry = {
-      admin: session?.user?.name || "Sistema/Twitch",
-      action: type,
-      amount: discount,
-      timestamp: new Date().toISOString(),
-    };
-
-    // Guardamos en una lista de Redis y recortamos a los últimos 20
-    await redis.lpush("admin_logs", JSON.stringify(logEntry));
-    await redis.ltrim("admin_logs", 0, 19);
-
-    // Notificamos vía Pusher para que el Admin Dashboard se actualice en vivo
+    // Actualizar el log en el Dashboard
     await pusherServer.trigger("auction-channel", "admin-log-update", logEntry);
 
-    // 5. Respuesta con el nuevo precio y si se activó un evento sorpresa
     return NextResponse.json({ 
       success: true, 
       newPrice, 

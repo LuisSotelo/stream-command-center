@@ -33,6 +33,11 @@ export async function POST(req: Request) {
     if (bits >= 1000) discountType = "BITS_1000";
     else if (bits >= 500) discountType = "BITS_500";
     else if (bits >= 100) discountType = "BITS_100";
+    else {
+      // 🐷 AQUÍ ENTRA JOAQUÍN EL SEMIDIOS
+      // Si mandan 1 a 99 bits, o cualquier cantidad que no llegue al siguiente tier
+      discountType = "BITS_TROLL"; 
+    } 
   }
 
   if (discountType) {
@@ -43,7 +48,7 @@ export async function POST(req: Request) {
         "Content-Type": "application/json",
         "x-twitch-secret": process.env.TWITCH_WEBHOOK_SECRET! // Para saltar el login del admin
       },
-      body: JSON.stringify({ type: discountType, user: userName }),
+      body: JSON.stringify({ type: discountType, user: userName, amount: event.bits || 0 }),
     });
   }
 
