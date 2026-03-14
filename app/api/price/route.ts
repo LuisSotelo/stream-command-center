@@ -71,7 +71,7 @@ export async function POST(req: Request) {
       case 'BITS_TROLL':
         discount = 0;
         const randomQuote = culiacanQuotes[Math.floor(Math.random() * culiacanQuotes.length)];
-        joaquinComment = `🤖 [JOAQUÍN]: Gracias por tu benevolente contribución de ${amount} bits, @${user}. Eso ${randomQuote} 🐷✨`;
+        joaquinComment = `🤖 Gracias por tu benevolente contribución de ${amount} bits, @${user}. Eso ${randomQuote} 🐷✨`;
         break;
       default: discount = 0;
     }

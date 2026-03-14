@@ -72,85 +72,89 @@ export default function AdminDashboard() {
       }
     };
 
-    useEffect(() => {
-      if (status === "authenticated") {
-        fetchData();
-
-        const channel = pusherClient.subscribe("auction-channel");
-        
-        // Actualizar Backlog en vivo
-        channel.bind("admin-log-update", (newLog: any) => {
-          setLogs((prev) => [newLog, ...prev].slice(0, 20));
-        });
-
-        // Sincronizar precio si alguien más (o Twitch) lo mueve
-        channel.bind("price-update", (data: any) => {
-          if (data.newPrice) setCurrentPrice(data.newPrice);
-        });
-
-        return () => {
-          pusherClient.unsubscribe("auction-channel");
-        };
-      }
-    }, [status]);
-
-  // --- 2. LÓGICA DEL BOT (JOAQUÍN) ---
+  // --- 2. EL CEREBRO: JOAQUÍN Y CONEXIONES (Twitch + Pusher) ---
   useEffect(() => {
-    if (status === "authenticated") {
-      clientRef.current = new tmi.Client({
-        options: { debug: false },
-        identity: {
-          username: "ChanchoJoaquin",
-          password: process.env.NEXT_PUBLIC_TWITCH_BOT_OAUTH || "",
-        },
-        channels: [process.env.NEXT_PUBLIC_TWITCH_CHANNEL || "LuisHongo"],
-      });
+    if (status !== "authenticated") return;
+    fetchData();
+    // 1. Conexión Twitch (TMI)
+    clientRef.current = new tmi.Client({
+      options: { debug: false },
+      identity: {
+        username: "ChanchoJoaquin",
+        password: process.env.NEXT_PUBLIC_TWITCH_BOT_OAUTH || "",
+      },
+      channels: [process.env.NEXT_PUBLIC_TWITCH_CHANNEL || "LuisHongo"],
+    });
 
-      clientRef.current.connect()
-        .then(() => setBotStatus("ONLINE"))
-        .catch(() => setBotStatus("ERROR"));
+    clientRef.current.connect()
+      .then(() => setBotStatus("ONLINE"))
+      .catch(() => setBotStatus("ERROR"));
 
-      // Pregoneo
-      const announcementInterval = setInterval(async () => {
-        if (clientRef.current?.readyState() === "OPEN" && isLiveRef.current) {
-          const topRes = await fetch("/api/auction/top");
-          const topData = await topRes.json();
-          const mvp = topData.top?.[0]?.user || "Nadie aún";
-          const totalDescontado = topData.top?.[0]?.score || 0;
+    // 2. Suscripción Pusher (Unificada)
+    const channel = pusherClient.subscribe("auction-channel");
+    
+    // -- Listeners de Pusher --
+    channel.bind("admin-log-update", (newLog: any) => {
+      setLogs((prev) => [newLog, ...prev].slice(0, 20));
+    });
 
-          const msg = `🤖 [SISTEMA]: Precio: $${currentPriceRef.current}. MVP: ${mvp} (-$${totalDescontado}). Fase: ${levelRef.current.name}. ¡Bajen el precio! 🚀`;
-          clientRef.current.say(process.env.NEXT_PUBLIC_TWITCH_CHANNEL || "LuisHongo", msg);
+    channel.bind("price-update", (data: any) => {
+      if (data.newPrice) setCurrentPrice(data.newPrice);
+    });
+
+    channel.bind("joaquin-troll", (data: any) => {
+      clientRef.current?.say(process.env.NEXT_PUBLIC_TWITCH_CHANNEL || "LuisHongo", `🤖 ${data.message} 🐷`);
+    });
+
+    channel.bind("start-countdown", (data: any) => {
+      playSound("suspense-countdown.mp3");
+      const channelName = process.env.NEXT_PUBLIC_TWITCH_CHANNEL || "LuisHongo";
+      let counter = data.seconds;
+      clientRef.current?.say(channelName, "🚨 ¡SISTEMA INICIADO! El link se libera en...");
+
+      const timer = setInterval(() => {
+        if (counter > 0) {
+          clientRef.current?.say(channelName, `⏳ ${counter}...`);
+          counter--;
+        } else {
+          clearInterval(timer);
+          clientRef.current?.say(channelName, `🏆 ¡PRECIO FINAL: $${data.finalPrice} MXN! COMPRA AQUÍ: ${data.mlLink}`);
         }
-      }, 20 * 60 * 1000);
+      }, 1000);
+    });
 
-      // Listeners de Joaquín
-      const channel = pusherClient.subscribe("auction-channel");
+    // 3. Listener de Comandos Twitch
+    clientRef.current.on('message', async (_chan, _tags, message, self) => {
+      if (self || !message.startsWith('!')) return; 
+      const command = message.toLowerCase().trim();
+      const chName = process.env.NEXT_PUBLIC_TWITCH_CHANNEL || "LuisHongo";
+
+      if (command === '!precio') {
+        const res = await fetch('/api/price');
+        const data = await res.json();
+        clientRef.current?.say(chName, `🤖 El precio actual es $${data.newPrice || currentPriceRef.current} MXN. ¡Bajen eso mortales! 🐷`);
+      }
       
-      channel.bind("start-countdown", (data: any) => {
-        playSound("suspense-countdown.mp3");
-        const channelName = process.env.NEXT_PUBLIC_TWITCH_CHANNEL || "LuisHongo";
-        let counter = data.seconds;
-        clientRef.current?.say(channelName, "🚨 ¡SISTEMA INICIADO! El link se libera en...");
+      if (command === '!top') {
+        const res = await fetch("/api/auction/top");
+        const data = await res.json();
+        const mvp = data.top?.[0];
+        clientRef.current?.say(chName, mvp ? `🤖 El MVP es @${mvp.user} con -$${mvp.score}. ¡Respeten al Sugar Daddy! 👑` : `🤖 Nadie ha donado. Humildad máxima en el chat. 🐽`);
+      }
 
-        const timer = setInterval(() => {
-          if (counter > 0) {
-            clientRef.current?.say(channelName, `⏳ ${counter}...`);
-            counter--;
-          } else {
-            clearInterval(timer);
-            clientRef.current?.say(channelName, `🏆 ¡PRECIO FINAL: $${data.finalPrice} MXN! COMPRA AQUÍ: ${data.mlLink}`);
-          }
-        }, 1000);
-      });
+      if (command === '!joaquin') {
+        const quotes = ["¿Otro sushi?", "Seta y Bolillo programan mejor que ustedes.", "He visto mejores códigos en un microondas."];
+        clientRef.current?.say(chName, `🤖 ${quotes[Math.floor(Math.random()*quotes.length)]} 🐷`);
+      }
+    });
 
-      return () => {
-        clearInterval(announcementInterval);
-        if (clientRef.current) {
-          clientRef.current.disconnect();
-          setBotStatus("OFFLINE");
-        }
-      };
-    }
+    return () => {
+      pusherClient.unsubscribe("auction-channel");
+      if (clientRef.current) {
+        clientRef.current.disconnect();
+        setBotStatus("OFFLINE");
+      }
+    };
   }, [status]);
 
   // --- 3. VERIFICACIÓN DE ML (Simultánea a Twitch) ---
