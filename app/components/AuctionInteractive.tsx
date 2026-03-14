@@ -18,6 +18,8 @@ export function AuctionInteractive() {
   const [countdown, setCountdown] = useState<number | null>(null);
   const [showFinalLink, setShowFinalLink] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
+  const [lastUser, setLastUser] = useState<{name: string, amount: number} | null>(null);
+  const [topContributors, setTopContributors] = useState<{user: string, score: number}[]>([]);
 
   let lastSoundTime = 0;
 
@@ -31,6 +33,17 @@ export function AuctionInteractive() {
       case 'NIVEL 3': return 'shadow-[0_0_60px_#9146ff]';
       case 'MODO FINAL': return 'shadow-[0_0_100px_#ff0055] animate-pulse';
       default: return 'shadow-none';
+    }
+  };
+
+  // --- 1. FUNCIÓN DE CARGA DEL TOP (Fuera de los efectos) ---
+  const fetchTop = async () => {
+    try {
+      const res = await fetch("/api/auction/top");
+      const data = await res.json();
+      if (data.success) setTopContributors(data.top);
+    } catch (err) {
+      console.error("Error loading top");
     }
   };
 
@@ -48,6 +61,7 @@ export function AuctionInteractive() {
 
     // Ejecutamos al cargar
     checkTwitchStatus();
+    fetchTop();
     
     // Opcional: Verificar cada 2 minutos por si inicias stream mientras están en la página
     const interval = setInterval(checkTwitchStatus, 120000);
@@ -78,6 +92,11 @@ export function AuctionInteractive() {
       const incomingPrice = data.newPrice || data.price;
       if (incomingPrice !== undefined) {
         setPrice(Number(incomingPrice));
+
+        // GUARDAMOS EL ÚLTIMO GOLPE
+        if (data.user) {
+          setLastUser({ name: data.user, amount: data.amount || 0 });
+        }
         
         // Sonido de Moneda Neo Geo
         new Audio("/sounds/casino-win.mp3").play().catch(() => {});
@@ -85,6 +104,9 @@ export function AuctionInteractive() {
         // Activar Shake
         setTriggerShake(true); 
         setTimeout(() => setTriggerShake(false), 400);
+
+        //Refrescamos el top cada vez que hay un cambio de precio, para mantenerlo dinámico
+        fetchTop();
       }
 
       // Manejo de Niveles
@@ -101,7 +123,6 @@ export function AuctionInteractive() {
         setTriggerEvent(data.specialEvent.name);
         setTimeout(() => setTriggerEvent(null), 5000);
       }
-      return () => clearInterval(interval);
     });
 
     gameChannel.bind("progress-update", (data: any) => {
@@ -141,6 +162,23 @@ export function AuctionInteractive() {
   }, [currentLevel]);
 
   if (status === "loading") return <div className="p-8 text-brand-cyan font-mono text-center">INITIALIZING_SYSTEM...</div>;
+
+  // Componente para el ranking de top contributors
+  function TopRanking({ top }: { top: {user: string, score: number}[] }) {
+    return (
+      <div className="flex flex-col gap-2 font-mono border-l border-brand-cyan/20 pl-4">
+        <h3 className="text-[10px] text-brand-cyan tracking-widest mb-2 uppercase opacity-60">Top_Contributors</h3>
+        {top.slice(0, 3).map((player, i) => (
+          <div key={player.user} className="flex justify-between items-center gap-8 border-b border-white/5 pb-1">
+            <span className="text-xs text-white uppercase tracking-tighter">
+              {i + 1}. {player.user}
+            </span>
+            <span className="text-xs text-brand-cyan font-bold">-${player.score}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
 
   return (
     <main className={`min-h-screen flex flex-col items-center justify-center p-4 transition-all duration-1000 
@@ -217,7 +255,12 @@ export function AuctionInteractive() {
       </AnimatePresence>
 
       {/* Sable Láser */}
-      <div className="w-full max-w-md mt-12 mb-2 px-4">
+      <div className="w-full max-w-4xl grid grid-cols-1 md:grid-cols-3 gap-8 mt-12 px-4 items-start">
+        {/* COLUMNA IZQUIERDA: Top Ranking */}
+      <div className="hidden md:block">
+        <TopRanking top={topContributors} />
+      </div>
+      <div className="md:col-span-2">
         <div className={`flex justify-between font-mono text-[10px] mb-2 uppercase tracking-[0.2em] ${isFinalMode ? 'text-red-400' : 'text-[#00f5ff]'}`}>
           <span>Syncing_Game_Progress</span>
           <span>{progress}%</span>
@@ -237,6 +280,7 @@ export function AuctionInteractive() {
             />
           </motion.div>
         </div>
+      </div>
       </div>
 
       {!isLive && (
@@ -290,6 +334,13 @@ export function AuctionInteractive() {
               <h2 className="text-brand-purple text-2xl mb-4 font-mono tracking-widest uppercase italic">
                 {isFinished ? "SISTEMA_CLAUSURADO" : "¡SUBASTA FINALIZADA!"}
               </h2>
+
+              {isFinished && (
+                <div className="mt-8 flex flex-col items-center">
+                  <span className="text-gray-500 text-[10px] tracking-widest">GOLPE_DE_GRACIA_POR:</span>
+                  <span className="text-brand-cyan text-2xl font-black">{lastUser?.name || "LuisHongo"}</span>
+                </div>
+              )}
               
               <div className="text-8xl font-black text-white mb-2 drop-shadow-[0_0_20px_rgba(255,255,255,0.3)]">
                 ${price} <span className="text-2xl">MXN</span>

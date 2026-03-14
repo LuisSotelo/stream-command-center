@@ -12,8 +12,9 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [currentPrice, setCurrentPrice] = useState(1200);
   const [progress, setProgress] = useState(0);
+  const [logs, setLogs] = useState<any[]>([]);
 
-  // --- ESTADOS DE CHANCHO JOAQUÍN,MERCADO LIBRE,Y TWITCH ---
+  // --- ESTATUS DE CONEXIONES ---
   const [botStatus, setBotStatus] = useState("OFFLINE");
   const [mlStatus, setMlStatus] = useState("CHECKING");
   const [twitchStatus, setTwitchStatus] = useState("CHECKING");
@@ -21,28 +22,81 @@ export default function AdminDashboard() {
   const clientRef = useRef<tmi.Client | null>(null);
   const level = getCurrentLevel(currentPrice);
 
-  // Creamos una referencia que siempre apunte al nivel actual
+  // Refs para el bot
   const levelRef = useRef(level);
   const isLiveRef = useRef(isLive);
+  const currentPriceRef = useRef(currentPrice);
 
-  // Actualizamos las refs cada vez que el estado cambie
   useEffect(() => {
     levelRef.current = level;
     isLiveRef.current = isLive;
-  }, [level, isLive]);
+    currentPriceRef.current = currentPrice;
+  }, [level, isLive, currentPrice]);
 
-  // --- LÓGICA DE SONIDOS ---
   const playSound = (file: string) => {
     const audio = new Audio(`/sounds/${file}`);
-    // Añadimos un chequeo de volumen y un catch más robusto
     audio.volume = 0.5;
-    audio.play().catch(() => {
-      // Si falla, solo lo ignoramos en consola para no ensuciar el log
-      console.log("🔊 Sonido bloqueado: Esperando interacción del usuario.");
-    });
+    audio.play().catch(() => console.log("🔊 Sonido bloqueado."));
   };
 
-  // --- LÓGICA DEL BOT (JOAQUÍN) ---
+  // --- 1. ÚNICO EFECTO DE SINCRONIZACIÓN (Pusher, Logs y Datos Iniciales) ---
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [logsRes, statusRes, priceRes, progRes, mlRes] = await Promise.all([
+          fetch("/api/admin/logs"),
+          fetch("/api/twitch/status"),
+          fetch("/api/price"),
+          fetch("/api/game-progress"),
+          fetch("/api/ml/status")
+        ]);
+
+        const logsData = logsRes.ok ? await logsRes.json() : { success: false, logs: [] };
+        const statusData = statusRes.ok ? await statusRes.json() : { isLive: false, connection: "OFFLINE" };
+        const priceData = priceRes.ok ? await priceRes.json() : {};
+        const progData = progRes.ok ? await progRes.json() : { success: false };
+        const mlData = mlRes.ok ? await mlRes.json() : { status: "OFFLINE" };
+
+
+        if (logsData.success) setLogs(logsData.logs);
+        setIsLive(statusData.isLive);
+        setTwitchStatus(statusData.connection);
+        if (priceData.newPrice) setCurrentPrice(priceData.newPrice);
+        if (progData.success) setProgress(progData.progress);
+        
+        // Seteamos el estatus de ML
+        setMlStatus(mlData.status || "OFFLINE");
+      } catch (error) {
+        console.error("Error sincronizando dashboard:", error);
+        setTwitchStatus("OFFLINE");
+        setMlStatus("OFFLINE");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (status === "authenticated") {
+      fetchData();
+
+      const channel = pusherClient.subscribe("auction-channel");
+      
+      // Actualizar Backlog en vivo
+      channel.bind("admin-log-update", (newLog: any) => {
+        setLogs((prev) => [newLog, ...prev].slice(0, 20));
+      });
+
+      // Sincronizar precio si alguien más (o Twitch) lo mueve
+      channel.bind("price-update", (data: any) => {
+        if (data.newPrice) setCurrentPrice(data.newPrice);
+      });
+
+      return () => {
+        pusherClient.unsubscribe("auction-channel");
+      };
+    }
+  }, [status]);
+
+  // --- 2. LÓGICA DEL BOT (JOAQUÍN) ---
   useEffect(() => {
     if (status === "authenticated") {
       clientRef.current = new tmi.Client({
@@ -55,119 +109,78 @@ export default function AdminDashboard() {
       });
 
       clientRef.current.connect()
-        .then(() => { setBotStatus("ONLINE"); })
-        .catch((err) => {
-          console.error("Error conectando a Joaquín:", err);
-          setBotStatus("ERROR");
-        });
+        .then(() => setBotStatus("ONLINE"))
+        .catch(() => setBotStatus("ERROR"));
 
-      // Escuchar Pusher para el conteo
+      // Pregoneo
+      const announcementInterval = setInterval(async () => {
+        if (clientRef.current?.readyState() === "OPEN" && isLiveRef.current) {
+          const topRes = await fetch("/api/auction/top");
+          const topData = await topRes.json();
+          const mvp = topData.top?.[0]?.user || "Nadie aún";
+          const totalDescontado = topData.top?.[0]?.score || 0;
+
+          const msg = `🤖 [SISTEMA]: Precio: $${currentPriceRef.current}. MVP: ${mvp} (-$${totalDescontado}). Fase: ${levelRef.current.name}. ¡Bajen el precio! 🚀`;
+          clientRef.current.say(process.env.NEXT_PUBLIC_TWITCH_CHANNEL || "LuisHongo", msg);
+        }
+      }, 20 * 60 * 1000);
+
+      // Listeners de Joaquín
       const channel = pusherClient.subscribe("auction-channel");
+      
       channel.bind("start-countdown", (data: any) => {
-        if (!clientRef.current) return;
-        // 🔊 SONIDO DE SUSPENSO: Empieza justo cuando inicia el conteo
         playSound("suspense-countdown.mp3");
-
-        const channelName =
-          process.env.NEXT_PUBLIC_TWITCH_CHANNEL || "LuisHongo";
-
+        const channelName = process.env.NEXT_PUBLIC_TWITCH_CHANNEL || "LuisHongo";
         let counter = data.seconds;
-
-        clientRef.current.say(
-          channelName,
-          "🚨 ¡SISTEMA INICIADO! El link de Mercado Libre se libera en...",
-        );
+        clientRef.current?.say(channelName, "🚨 ¡SISTEMA INICIADO! El link se libera en...");
 
         const timer = setInterval(() => {
           if (counter > 0) {
             clientRef.current?.say(channelName, `⏳ ${counter}...`);
-
             counter--;
           } else {
             clearInterval(timer);
-
-            clientRef.current?.say(
-              channelName,
-              `🏆 ¡PRECIO FINAL: $${data.finalPrice} MXN! COMPRA AQUÍ: ${data.mlLink}`,
-            );
+            clientRef.current?.say(channelName, `🏆 ¡PRECIO FINAL: $${data.finalPrice} MXN! COMPRA AQUÍ: ${data.mlLink}`);
           }
         }, 1000);
       });
-    }
 
-          // --- ANUNCIOS AUTOMÁTICOS (PREGONERO) ---
-      const announcementInterval = setInterval(() => {
-        if (clientRef.current && botStatus === "ONLINE" && isLive) {
-          const channelName = process.env.NEXT_PUBLIC_TWITCH_CHANNEL || "LuisHongo";
-          
-          const msg = `🤖 [SISTEMA]: ¡Subasta activa! Estamos en ${level.name}. 📉 DESCUENTOS: Sub T1 -$${level.rates.sub} | Prime -$${level.rates.prime} | 100 Bits -$${level.rates.bits100} | 500 Bits -$${level.rates.bits500} | 1000 Bits -$${level.rates.bits1000}. ¡Aprovechen para bajar ese precio final! 🚀`;
-
-          clientRef.current.say(channelName, msg);
-        }
-      }, 20 * 60 * 1000); // 20 Minutos
-
-    return () => {
-      if (clientRef.current) {
+      return () => {
         clearInterval(announcementInterval);
-        clientRef.current.disconnect();
-        setBotStatus("OFFLINE");
-      }
-    };
+        if (clientRef.current) {
+          clientRef.current.disconnect();
+          setBotStatus("OFFLINE");
+        }
+      };
+    }
   }, [status]);
 
-  // --- CHECKEO DE CONEXIÓN CON MERCADO LIBRE ---
+  // --- 3. VERIFICACIÓN DE ML (Simultánea a Twitch) ---
   useEffect(() => {
     const checkML = async () => {
       try {
         const res = await fetch("/api/ml/status");
         const data = await res.json();
+        // Asumiendo que tu API responde { status: "CONNECTED" | "OFFLINE" }
         setMlStatus(data.status);
-      } catch {
+      } catch (error) {
+        console.error("Error consultando ML:", error);
         setMlStatus("OFFLINE");
       }
     };
 
-    checkML();
-    const interval = setInterval(checkML, 300000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // --- SINCRONIZACIÓN DE DATOS ---
-  useEffect(() => {
-    async function fetchData() {
-      try {
-        const statusRes = await fetch("/api/twitch/status");
-        const statusData = await statusRes.json();
-        setIsLive(statusData.isLive);
-        setTwitchStatus(statusData.connection);
-
-        const priceRes = await fetch("/api/price");
-        const priceData = await priceRes.json();
-        if (priceData.newPrice) setCurrentPrice(priceData.newPrice);
-
-        const progRes = await fetch("/api/game-progress");
-        const progData = await progRes.json();
-        if (progData.success) setProgress(progData.progress);
-      } catch (error) {
-        console.error("Error sincronizando dashboard:", error);
-        setTwitchStatus("OFFLINE");
-      } finally {
-        setLoading(false);
-      }
+    if (status === "authenticated") {
+      checkML();
+      // Revisamos cada 5 minutos
+      const interval = setInterval(checkML, 300000);
+      return () => clearInterval(interval);
     }
-
-    if (status !== "loading") fetchData();
-    const interval = setInterval(fetchData, 30000);
-    return () => clearInterval(interval);
   }, [status]);
 
-  const isOwner =
-    session?.user?.email === process.env.NEXT_PUBLIC_OWNER_EMAIL ||
-    (session as any)?.user?.id === process.env.NEXT_PUBLIC_OWNER_ID;
+  const isOwner = session?.user?.email === process.env.NEXT_PUBLIC_OWNER_EMAIL || (session as any)?.user?.id === process.env.NEXT_PUBLIC_OWNER_ID;
 
   const handleDiscount = async (type: string) => {
     if (!isLive && !isOwner) return;
-
     try {
       const res = await fetch("/api/price", {
         method: "POST",
@@ -176,22 +189,16 @@ export default function AdminDashboard() {
       });
       const data = await res.json();
       if (data.success) setCurrentPrice(data.newPrice);
-    } catch (error) {
-      console.error("Error:", error);
-    }
+    } catch (error) { console.error("Error:", error); }
   };
 
   const handleProgressChange = async (value: number) => {
     setProgress(value);
-    try {
-      await fetch("/api/game-progress", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ progress: value }),
-      });
-    } catch (error) {
-      console.error("Error updating progress:", error);
-    }
+    await fetch("/api/game-progress", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ progress: value }),
+    });
   };
 
   const handleFinalizeAuction = async () => {
@@ -318,51 +325,56 @@ export default function AdminDashboard() {
               {/* BOTÓN PRIME - Azul Amazon para diferenciarlo */}
 
               <button
-                disabled={twitchStatus !== "CONNECTED"}
+                disabled={!isOwner && twitchStatus === "CONNECTED"}
                 onClick={() => handleDiscount("PRIME")}
                 className={`w-full py-4 bg-blue-500/10 border border-blue-500/50 rounded-lg hover:bg-blue-500/30 transition-all font-bold text-lg text-blue-400 ${twitchStatus !== "CONNECTED" ? "opacity-20 cursor-not-allowed" : "opacity-100"}`}
               >
                 PRIME_DETECTED (-${level.rates.prime} MXN)
+                {!isOwner && twitchStatus === "CONNECTED" && " 🔒"}
               </button>
 
               {/* BOTÓN SUB T1 - Morado Twitch Clásico */}
 
               <button
-                disabled={twitchStatus !== "CONNECTED"}
+                disabled={!isOwner && twitchStatus === "CONNECTED"}
                 onClick={() => handleDiscount("SUB")}
                 className={`w-full py-4 bg-brand-purple/20 border border-brand-purple rounded-lg hover:bg-brand-purple/40 transition-all font-bold text-lg ${twitchStatus !== "CONNECTED" ? "opacity-20 cursor-not-allowed" : "opacity-100"}`}
               >
                 SUB_DETECTED (-${level.rates.sub} MXN)
+                {!isOwner && twitchStatus === "CONNECTED" && " 🔒"}
               </button>
 
               {/* BITS 100 - Cyan */}
 
               <button
-                disabled={twitchStatus !== "CONNECTED"}
+                disabled={!isOwner && twitchStatus === "CONNECTED"}
                 onClick={() => handleDiscount("BITS_100")}
                 className={`w-full py-4 bg-brand-cyan/20 border border-brand-cyan rounded-lg hover:bg-brand-cyan/40 transition-all font-bold text-lg text-brand-cyan ${twitchStatus !== "CONNECTED" ? "opacity-20 cursor-not-allowed" : "opacity-100"}`}
               >
                 100_BITS (-${level.rates.bits100} MXN)
+                {!isOwner && twitchStatus === "CONNECTED" && " 🔒"}
               </button>
 
               {/* BITS 500 - Verde */}
 
               <button
-                disabled={twitchStatus !== "CONNECTED"}
+                disabled={!isOwner && twitchStatus === "CONNECTED"}
                 onClick={() => handleDiscount("BITS_500")}
                 className={`w-full py-4 bg-green-500/20 border border-green-500 rounded-lg hover:bg-green-500/40 transition-all font-bold text-lg text-green-400 ${twitchStatus !== "CONNECTED" ? "opacity-20 cursor-not-allowed" : "opacity-100"}`}
               >
                 500_BITS (-${level.rates.bits500} MXN)
+                {!isOwner && twitchStatus === "CONNECTED" && " 🔒"}
               </button>
 
               {/* BITS 1000 - Naranja (Máximo impacto) */}
 
               <button
-                disabled={twitchStatus !== "CONNECTED"}
+                disabled={!isOwner && twitchStatus === "CONNECTED"}
                 onClick={() => handleDiscount("BITS_1000")}
                 className={`w-full py-4 bg-orange-500/10 border border-orange-500/50 rounded-lg hover:bg-orange-500/20 transition-all font-bold text-lg text-orange-500 ${twitchStatus !== "CONNECTED" ? "opacity-20 cursor-not-allowed" : "opacity-100"}`}
               >
                 1000_BITS (-${level.rates.bits1000} MXN)
+                {!isOwner && twitchStatus === "CONNECTED" && " 🔒"}
               </button>
             </div>
           </div>
@@ -444,6 +456,21 @@ export default function AdminDashboard() {
             >
               🚀 Launch Final Publication
             </button>
+
+            <h3 className="text-[10px] text-gray-500 tracking-widest uppercase mb-4">Admin_Activity_Log</h3>
+          <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+            {logs.map((log, i) => (
+              <div key={i} className="text-[9px] font-mono flex justify-between border-b border-white/5 pb-1">
+                <span className={log.admin === "Sistema/Twitch" ? "text-brand-cyan" : "text-brand-purple"}>
+                  [{log.admin.toUpperCase()}]
+                </span>
+                <span className="text-gray-400">{log.action} (-${log.amount})</span>
+                <span className="text-[8px] text-gray-600">
+                  {new Date(log.timestamp).toLocaleTimeString()}
+                </span>
+              </div>
+            ))}
+          </div>
           </div>
         )}
 

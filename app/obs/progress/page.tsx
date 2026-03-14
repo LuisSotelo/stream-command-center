@@ -48,7 +48,7 @@ export default function ObsProgressOverlay() {
             exit={{ opacity: 0, scale: 1.1, filter: "blur(10px)" }}
             className="w-full max-w-lg flex flex-col items-center"
           >
-            <span className={`text-[10px] tracking-[0.4em] mb-3 font-mono ${isFinalMode ? 'text-red-500' : 'text-[#00f5ff]'}`}>
+            <span className={`text-[20px] tracking-[0.4em] mb-3 font-mono ${isFinalMode ? 'text-red-500' : 'text-[#00f5ff]'}`}>
               GAME_PROGRESS: {progress}%
             </span>
 

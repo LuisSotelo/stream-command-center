@@ -52,66 +52,71 @@ export async function POST(req: Request) {
 
   try {
     const { type, user } = await req.json(); 
-    // type puede ser: 'SUB', 'BITS_100', 'BITS_500', 'BITS_1000'
-
-    // 1. Obtener el precio actual de Redis
     const currentPriceRaw = await redis.get("auction_price");
     const currentPrice = currentPriceRaw ? Number(currentPriceRaw) : 1200;
 
-    // 2. Determinar en qué nivel estamos
     const level = getCurrentLevel(currentPrice);
     
-    // 3. Calcular el descuento basado en la tabla de niveles
     let discount = 0;
     switch (type) {
-      case 'SUB':
-        discount = level.rates.sub;
-        break;
-      case 'PRIME':
-        discount = level.rates.prime;
-        break;
-      case 'BITS_100':
-        discount = level.rates.bits100;
-        break;
-      case 'BITS_500':
-        discount = level.rates.bits500;
-        break;
-      case 'BITS_1000':
-        discount = level.rates.bits1000;
-        break;
-      default:
-        discount = 0;
+      case 'SUB': discount = level.rates.sub; break;
+      case 'PRIME': discount = level.rates.prime; break;
+      case 'BITS_100': discount = level.rates.bits100; break;
+      case 'BITS_500': discount = level.rates.bits500; break;
+      case 'BITS_1000': discount = level.rates.bits1000; break;
+      default: discount = 0;
     }
 
     let newPrice = currentPrice - discount;
+    const discountAmount = Number(discount);
 
-    // 4. Lógica de EVENTOS SORPRESA
+    // 1. Guardar en el TOP (Solo una vez)
+    if (user && user !== "Admin") {
+      await redis.zincrby("auction_top", discountAmount, user);
+      await redis.set("auction_last_hit", user);
+    }
+
+    // 2. Lógica de EVENTOS SORPRESA (Antes de notificar)
     let specialEvent = null;
-    // Si al restar el descuento cruzamos la meta del nivel
     if (level.event && newPrice <= level.event.triggerPrice) {
       newPrice -= level.event.amount;
       specialEvent = {
         name: level.event.name,
-        extraDiscount: level.event.amount
+        amount: level.event.amount // Usamos 'amount' para que el Front-End lo lea bien
       };
     }
 
-    // Asegurar que el precio no sea menor a 200 (tu límite de Mercado Libre)
-    if (newPrice < 200) newPrice = 200;
+    if (newPrice < minPrice) newPrice = minPrice;
 
-    // 5. Guardar el nuevo precio en Redis
+    // 3. Persistencia en Redis
     await redis.set("auction_price", newPrice);
 
-    // 6. Notificar a Pusher (Landing y Overlays)
+    // 4. ÚNICO TRIGGER DE PUSHER (Notificamos todo el paquete de datos)
     await pusherServer.trigger("auction-channel", "price-update", {
       newPrice,
       user: user || "Anónimo",
       type,
-      discountApplied: discount,
+      amount: discountAmount, // Cantidad que bajó originalmente
       levelName: level.name,
-      specialEvent // Esto disparará las animaciones locas
+      specialEvent // Si es null, no pasa nada. Si existe, explota el HYPE
     });
 
+    // 5. LOGGING (Opcional, para tener un historial de acciones)
+    const logEntry = {
+      admin: session?.user?.name || "Sistema/Twitch",
+      action: type,
+      amount: discount,
+      timestamp: new Date().toISOString(),
+    };
+
+    // Guardamos en una lista de Redis y recortamos a los últimos 20
+    await redis.lpush("admin_logs", JSON.stringify(logEntry));
+    await redis.ltrim("admin_logs", 0, 19);
+
+    // Notificamos vía Pusher para que el Admin Dashboard se actualice en vivo
+    await pusherServer.trigger("auction-channel", "admin-log-update", logEntry);
+
+    // 5. Respuesta con el nuevo precio y si se activó un evento sorpresa
     return NextResponse.json({ 
       success: true, 
       newPrice, 
