@@ -30,6 +30,18 @@ A diferencia de una subasta tradicional donde el precio sube, aquí **la comunid
 - **Animaciones:** [Framer Motion](https://www.framer.com/motion/) para una UI fluida y "vibe coder".
 - **Deployment:** [Vercel](https://vercel.com/) (Edge Functions).
 
+## 🛠️ Replicación de Base de Datos (Redis)
+Si deseas desplegar tu propia instancia, asegúrate de inicializar las siguientes llaves en tu base de datos Redis:
+
+| Llave  | Tipo | Descripción |
+| ------------- | ------------- | ------------- |
+| `auction_price`  | `String`  | Precio actual (disminuye con interacciones).  |
+| `auction_status`  | `String`  | Estado del sistema (`active`, `paused`, `finished`).  |
+| `game_progress`  | `String`  | Porcentaje visual de la meta (`0-100`).  |
+| `ml_access_token`  | `String`  | Token temporal de Mercado Libre (Auto-managed).  |
+| `ml_refresh_token`  | `String`  | Llave maestra para renovación de acceso  |
+| `final_price_achieved`  | `String`  | Precio fijo guardado al finalizar la subasta  |
+
 ## 🏗️ Arquitectura del Sistema
 
 ```mermaid

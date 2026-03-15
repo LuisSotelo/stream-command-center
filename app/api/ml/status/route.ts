@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
+import { getValidMLToken } from "@/lib/mercadolibre";
 
 export async function GET() {
   try {
-    const accessToken = process.env.ML_ACCESS_TOKEN;
+    const accessToken = await getValidMLToken();
     const itemId = process.env.ML_ITEM_ID;
 
     if (!accessToken || !itemId) {
@@ -19,9 +20,13 @@ export async function GET() {
     if (res.ok) {
       return NextResponse.json({ status: "CONNECTED" });
     } else {
-      return NextResponse.json({ status: "EXPIRED_OR_INVALID" });
+      // Si la respuesta no es OK, es probable que el Refresh Token también haya muerto
+      // o el Item ID esté mal. Mandamos el estatus para que el Dashboard se ponga en rojo.
+      console.error("ML Status Error:", res.status);
+      return NextResponse.json({ status: "AUTH_ERROR", code: res.status });
     }
   } catch (error) {
+    console.error("ML Status Error:", error);
     return NextResponse.json({ status: "OFFLINE" });
   }
 }

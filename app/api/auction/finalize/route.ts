@@ -1,16 +1,17 @@
 import { NextResponse } from "next/server";
 import { redis } from "@/lib/redis";
 import { pusherServer } from "@/lib/pusher";
+import { getValidMLToken } from "@/lib/mercadolibre";
 
 export async function POST() {
   try {
     // 1. Extraer y validar variables de entorno inmediatamente
     const itemId = process.env.ML_ITEM_ID;
-    const accessToken = process.env.ML_ACCESS_TOKEN;
+    const accessToken = await getValidMLToken();
 
     // Si falta alguna, lanzamos error antes de hacer cualquier cosa
     if (!itemId || !accessToken) {
-      console.error("❌ Error: ML_ITEM_ID o ML_ACCESS_TOKEN no configurados en .env");
+      console.error("❌ Error: ML_ITEM_ID no configurado en .env o ML_ACCESS_TOKEN no configurados en redis");
       return NextResponse.json({ 
         success: false, 
         error: "Server configuration missing" 
