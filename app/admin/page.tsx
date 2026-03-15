@@ -13,6 +13,7 @@ export default function AdminDashboard() {
   const [currentPrice, setCurrentPrice] = useState(1200);
   const [progress, setProgress] = useState(0);
   const [logs, setLogs] = useState<any[]>([]);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // --- ESTATUS DE CONEXIONES ---
   const [botStatus, setBotStatus] = useState("OFFLINE");
@@ -203,13 +204,24 @@ export default function AdminDashboard() {
   const isOwner = session?.user?.email === process.env.NEXT_PUBLIC_OWNER_EMAIL || (session as any)?.user?.id === process.env.NEXT_PUBLIC_OWNER_ID;
 
   const handleDiscount = async (type: string) => {
-    if (!isLive && !isOwner) return;
+    if (!isLive && !isOwner) {
+      setErrorMessage("⚠️ EL SISTEMA ESTÁ BLOQUEADO: EL STREAM NO ESTÁ ACTIVO.");
+      setTimeout(() => setErrorMessage(null), 5000); // Se quita en 5 seg
+      return;
+    }
     try {
       const res = await fetch("/api/price", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type, user: session?.user?.name || "Admin" }),
       });
+
+      if (res.status === 403) {
+      setErrorMessage("🚫 ACCESO DENEGADO: DEBES ESTAR EN VIVO PARA MODIFICAR EL PRECIO.");
+      setTimeout(() => setErrorMessage(null), 5000);
+      return;
+    }
+
       const data = await res.json();
       if (data.success) setCurrentPrice(data.newPrice);
     } catch (error) { console.error("Error:", error); }
@@ -318,6 +330,14 @@ export default function AdminDashboard() {
           TERMINATE_SESSION
         </button>
       </div>
+
+      {errorMessage && (
+        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-50 w-full max-w-md animate-bounce">
+          <div className="bg-red-600 text-white px-6 py-3 rounded-full shadow-2xl border-2 border-white/20 text-center font-bold text-xs tracking-widest">
+            {errorMessage}
+          </div>
+        </div>
+      )}
 
       {/* ALERTA DE SISTEMA BLOQUEADO */}
 
