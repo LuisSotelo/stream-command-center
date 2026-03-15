@@ -78,7 +78,13 @@ export default function AdminDashboard() {
     fetchData();
     // 1. Conexión Twitch (TMI)
     clientRef.current = new tmi.Client({
-      options: { debug: false },
+      options: { 
+        debug: false 
+      },
+      connection: {
+        reconnect: true,
+        secure: true
+      },
       identity: {
         username: "ChanchoJoaquin",
         password: process.env.NEXT_PUBLIC_TWITCH_BOT_OAUTH || "",
@@ -89,6 +95,21 @@ export default function AdminDashboard() {
     clientRef.current.connect()
       .then(() => setBotStatus("ONLINE"))
       .catch(() => setBotStatus("ERROR"));
+
+    // --- LISTENERS DE RECONEXIÓN ---
+    clientRef.current.on("reconnect", () => {
+      setBotStatus("RECONNECTING"); // Estado visual para que no te asustes
+      console.log("🔄 Joaquín está intentando reconectar...");
+    });
+
+    clientRef.current.on("connected", () => {
+      setBotStatus("ONLINE");
+    });
+
+    clientRef.current.on("disconnected", (reason) => {
+      setBotStatus("OFFLINE");
+      console.warn("⚠️ Joaquín desconectado:", reason);
+    });
 
     // 2. Suscripción Pusher (Unificada)
     const channel = pusherClient.subscribe("auction-channel");
@@ -240,13 +261,13 @@ export default function AdminDashboard() {
               className={`flex items-center gap-2 px-2 py-0.5 rounded border ${
                 botStatus === "ONLINE"
                   ? "border-green-500/50 bg-green-500/10 text-green-400"
-                  : botStatus === "ERROR"
-                    ? "border-red-500/50 bg-red-500/10 text-red-400"
-                    : "border-gray-500/50 text-gray-500"
+                  : botStatus === "RECONNECTING"
+                    ? "border-yellow-500/50 bg-yellow-500/10 text-yellow-400"
+                    : "border-red-500/50 bg-red-500/10 text-red-400"
               }`}
             >
               <div
-                className={`w-1.5 h-1.5 rounded-full ${botStatus === "ONLINE" ? "bg-green-400 animate-pulse" : "bg-gray-500"}`}
+                className={`w-1.5 h-1.5 rounded-full ${botStatus === "ONLINE" ? "bg-green-400 animate-pulse" : botStatus === "RECONNECTING" ? "bg-yellow-400 animate-bounce" : "bg-red-500"}`}
               />
 
               <span className="text-[8px] font-bold">JOAQUIN_{botStatus}</span>
