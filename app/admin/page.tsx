@@ -259,18 +259,18 @@ export default function AdminDashboard() {
   return (
     <main className="min-h-screen bg-[#0a0a0a] text-white p-8 font-mono">
       {/* Header */}
-      <div className="flex justify-between items-center mb-12 border-b border-brand-purple/20 pb-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8 md:mb-12 border-b border-brand-purple/20 pb-6">
         <div>
           <h1 className="text-2xl font-bold text-brand-purple tracking-tighter">
             STREAM_COMMAND_CENTER
           </h1>
-          <div className="flex items-center gap-4 mt-1">
-            <p className="text-[10px] text-brand-cyan uppercase tracking-widest">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-2">
+            <p className="w-full md:w-auto text-[10px] text-brand-cyan uppercase tracking-widest border-b border-brand-cyan/10 md:border-none pb-1 md:pb-0">
               Operator: {session?.user?.name} | Phase: {level.name}
             </p>
             {/* LABELS DE ESTATUS */}
             <div
-              className={`flex items-center gap-2 px-2 py-0.5 rounded border ${
+              className={`flex flex-wrap items-center gap-2 mt-2 px-2 py-0.5 rounded border ${
                 botStatus === "ONLINE"
                   ? "border-green-500/50 bg-green-500/10 text-green-400"
                   : botStatus === "RECONNECTING"
@@ -288,7 +288,7 @@ export default function AdminDashboard() {
             {/* ML STATUS LABEL */}
 
             <div
-              className={`flex items-center gap-2 px-2 py-0.5 rounded border ${
+              className={`flex flex-wrap items-center gap-2 mt-2 px-2 py-0.5 rounded border ${
                 mlStatus === "CONNECTED"
                   ? "border-yellow-500/50 bg-yellow-500/10 text-yellow-400"
                   : "border-red-500/50 bg-red-500/10 text-red-400"
@@ -306,7 +306,7 @@ export default function AdminDashboard() {
             {/* TWITCH STATUS LABEL */}
 
             <div
-              className={`flex items-center gap-2 px-2 py-0.5 rounded border ${
+              className={`flex flex-wrap items-center gap-2 mt-2 px-2 py-0.5 rounded border ${
                 twitchStatus === "CONNECTED"
                   ? "border-brand-purple/50 bg-brand-purple/10 text-brand-purple"
                   : "border-red-500/50 bg-red-500/10 text-red-400"
