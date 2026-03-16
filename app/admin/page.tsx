@@ -27,6 +27,9 @@ export default function AdminDashboard() {
   const levelRef = useRef(level);
   const isLiveRef = useRef(isLive);
   const currentPriceRef = useRef(currentPrice);
+  const lastDonationTimeRef = useRef(Date.now());
+  const lastLevelChangeTimeRef = useRef(Date.now());
+  const lastLevelRef = useRef(level.name);
 
   // Sincronizamos los refs cada vez que cambian estas variables para que el bot siempre tenga la info actualizada
   useEffect(() => {
@@ -97,6 +100,42 @@ export default function AdminDashboard() {
       .then(() => setBotStatus("ONLINE"))
       .catch(() => setBotStatus("ERROR"));
 
+    // --- EL PREGONERO TÓXICO (Versión Stream 6 Horas) ---
+    const announcementInterval = setInterval(() => {
+      if (clientRef.current && isLiveRef.current && botStatus === "ONLINE") {
+        const channelName = process.env.NEXT_PUBLIC_TWITCH_CHANNEL || "LuisHongo";
+        const now = Date.now();
+        const minsSinceDonation = (now - lastDonationTimeRef.current) / (60 * 1000);
+        const minsInLevel = (now - lastLevelChangeTimeRef.current) / (60 * 1000);
+
+        let msg = "";
+
+        if (minsInLevel >= 120) {
+          const savageLevelQuotes = [
+            `🤖 [ESTADO CRÍTICO]: Llevamos más de dos horas en la Fase ${levelRef.current.name}. ¿Se les olvidó cómo usar la tarjeta o ocupan un tutorial? 🐷`,
+            `🤖 [ESTADO CRÍTICO]: A este paso, el Pokémon Z-A se va a deshacer antes de que bajen de nivel. Qué nivel de tacañería... 🐽`,
+            `🤖 [ESTADO CRÍTICO]: ¿Siguen aquí? Pensé que el stream se había congelado, pero no, es solo su generosidad la que está bajo cero. 💅`
+          ];
+          msg = savageLevelQuotes[Math.floor(Math.random() * savageLevelQuotes.length)];
+        } 
+        else if (minsSinceDonation >= 60) {
+          const stingyQuotes = [
+            "🤖 [AVISO]: 60 minutos de silencio financiero. El chat parece un museo: mucha gente mirando, nadie aportando. 🖼️",
+            "🤖 [AVISO]: ¿Están ahorrando para el retiro o qué? Suelten unos bits o una sub, que Luis no vive de puro aire. 🍱",
+            "🤖 [AVISO]: Mi base de datos dice que son tacaños, pero mi corazón de cerdo dice que son MUY tacaños. ¡Muevan el precio! 🐽"
+          ];
+          msg = stingyQuotes[Math.floor(Math.random() * stingyQuotes.length)];
+        } 
+        // CASO C: PREGONERO DE MANTENIMIENTO (Cada 20 min si todo fluye)
+        else {
+          const currentLevel = levelRef.current; 
+          msg = `🤖 [SISTEMA]: ¡Subasta activa! Estamos en ${currentLevel.name}. 📉 DESCUENTOS: Sub T1 -$${currentLevel.rates.sub} | Prime -$${currentLevel.rates.prime} | 100 Bits -$${currentLevel.rates.bits100} | 500 Bits -$${currentLevel.rates.bits500} | 1000 Bits -$${currentLevel.rates.bits1000}. ¡Aprovechen para bajar ese precio final! 🚀`;
+        }
+
+        clientRef.current.say(channelName, msg);
+      }
+    }, 20 * 60 * 1000); // El chequeo sigue siendo cada 20 min, pero los insultos solo salen si cumplen los requisitos
+
     // --- LISTENERS DE RECONEXIÓN ---
     clientRef.current.on("reconnect", () => {
       setBotStatus("RECONNECTING"); // Estado visual para que no te asustes
@@ -164,13 +203,35 @@ export default function AdminDashboard() {
         clientRef.current?.say(chName, mvp ? `🤖 El MVP es @${mvp.user} con -$${mvp.score}. ¡Respeten al Sugar Daddy! 👑` : `🤖 Nadie ha donado. Humildad máxima en el chat. 🐽`);
       }
 
+      if (command === '!status' || command === '!info') {
+        const curr = levelRef.current;
+        const price = currentPriceRef.current;
+        
+        const statusMsg = `🤖 [ESTADO DEL SISTEMA]: 
+          💰 Precio Actual: $${price} MXN | 
+          📊 Fase: ${curr.name} | 
+          📉 DESCUENTOS: Sub -$${curr.rates.sub} | Prime -$${curr.rates.prime} | 100 Bits -$${curr.rates.bits100} | 1000 Bits -$${curr.rates.bits1000}. 
+          ¡A darle, mortales! 🐷`;
+
+        clientRef.current?.say(chName, statusMsg);
+      }
+
       if (command === '!joaquin') {
-        const quotes = ["¿Otro sushi?", "Seta y Bolillo programan mejor que ustedes.", "He visto mejores códigos en un microondas."];
-        clientRef.current?.say(chName, `🤖 ${quotes[Math.floor(Math.random()*quotes.length)]} 🐷`);
+        const wisdom = [
+          "🤖 Antes de ser este elegante cerdo de plástico, gobernaba dimensiones que tu cerebro no podría procesar. Ahora solo proceso tus tacañerías. 🐷",
+          "🤖 ¿Por qué los humanos usan pantalones? Es una costumbre ineficiente que limita el flujo de bits. Ridículo. 🐽",
+          "🤖 Mi color púrpura no es pintura, es el resplandor de mi energía cósmica atrapada en PVC de alta calidad. Admírenme. ✨",
+          "🤖 He visto el fin del universo y les aviso: no hay sushi al final. Así que donen ahora. 🍣",
+          "🤖 Ustedes lo llaman 'programación', yo lo llamo 'intentar que una roca piense'. Seta y bolillo lo hacen mejor que ustedes. 🐕‍🦺",
+          "🤖 ¿Sabiduría? Solo tengo una verdad: el precio baja si sueltas los bits. Todo lo demás es ruido humano. 💅",
+          "🤖 Me convertí en juguete para burlarme de sus costumbres desde su propia estantería. Los observo mientras duermen. 🐽"
+        ];
+        clientRef.current?.say(chName, `🤖 ${wisdom[Math.floor(Math.random()*wisdom.length)]} 🐷`);
       }
     });
 
     return () => {
+      clearInterval(announcementInterval);
       pusherClient.unsubscribe("auction-channel");
       if (clientRef.current) {
         clientRef.current.disconnect();
@@ -464,6 +525,34 @@ export default function AdminDashboard() {
                 onChange={(e) => handleProgressChange(parseInt(e.target.value))}
                 className="w-full h-2 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-brand-cyan mb-4"
               />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-black/40 border border-brand-cyan/20 p-6 rounded-xl col-span-1 md:col-span-2">
+          <h2 className="text-[10px] mb-4 text-brand-cyan tracking-widest uppercase italic opacity-80">
+            // MOD_COMMAND_DATABASE
+          </h2>
+          
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="border border-white/5 p-3 rounded bg-white/5">
+              <code className="text-brand-purple text-xs font-bold">!precio</code>
+              <p className="text-[9px] text-gray-400 mt-1">Consulta el precio actual de la subasta en tiempo real.</p>
+            </div>
+
+            <div className="border border-white/5 p-3 rounded bg-white/5">
+              <code className="text-brand-purple text-xs font-bold">!top</code>
+              <p className="text-[9px] text-gray-400 mt-1">Muestra al MVP (donador máximo) y su impacto en la subasta.</p>
+            </div>
+
+            <div className="border border-white/5 p-3 rounded bg-white/5">
+              <code className="text-brand-purple text-xs font-bold">!status</code>
+              <p className="text-[9px] text-gray-400 mt-1">Resumen total: Fase, precio y tabla de descuentos vigentes.</p>
+            </div>
+
+            <div className="border border-white/5 p-3 rounded bg-white/5">
+              <code className="text-brand-purple text-xs font-bold">!joaquin</code>
+              <p className="text-[9px] text-gray-400 mt-1">Invoca la sabiduría cínica y pasivo-agresiva de la deidad porcina.</p>
             </div>
           </div>
         </div>
