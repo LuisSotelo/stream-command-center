@@ -6,21 +6,38 @@ import { getCurrentLevel } from "@/lib/auction-logic";
 
 export async function GET() {
   try {
-    const currentPrice = await redis.get("auction_price");
-    const initialPrice = Number(process.env.NEXT_PUBLIC_INITIAL_PRICE) || 1200;
-    const estado_subasta = await redis.get("auction_status") || "active";
+    // 1. Traemos todos los datos necesarios de Redis en una sola ráfaga
+    const [currentPrice, estado_subasta, link, ultimoGanador] = await Promise.all([
+      redis.get("auction_price"),
+      redis.get("auction_status"),
+      redis.get("last_ml_link"),
+      redis.get("auction_last_hit")
+    ]);
 
+    const initialPrice = Number(process.env.NEXT_PUBLIC_INITIAL_PRICE) || 1200;
+    const status = estado_subasta || "active";
+
+    // 2. Si no hay precio (primera vez), inicializamos
     if (currentPrice === null) {
       await redis.set("auction_price", initialPrice);
-      await redis.set("auction_status", estado_subasta);
-      return NextResponse.json({ newPrice: initialPrice, auction_status: estado_subasta }); 
+      await redis.set("auction_status", status);
+      return NextResponse.json({ 
+        newPrice: initialPrice, 
+        auction_status: status,
+        mlLink: null,
+        lastWinner: null 
+      }); 
     }
 
+    // 3. Devolvemos TODO para que la vista sepa si mostrar el botón o no
     return NextResponse.json({ 
       newPrice: Number(currentPrice),
-      auction_status: estado_subasta
+      auction_status: status,
+      mlLink: link, // <--- AQUÍ ESTÁ TU LINK
+      lastWinner: ultimoGanador // <--- PARA MOSTRAR QUIÉN DIO EL GOLPE FINAL
     });
   } catch (error) {
+    console.error("Error en GET Price:", error);
     return NextResponse.json({ error: "Error" }, { status: 500 });
   }
 }

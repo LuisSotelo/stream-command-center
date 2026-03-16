@@ -29,7 +29,7 @@ export async function POST() {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        status: "active",
+        status: "active", // Lo activamos por si estaba pausado
         price: Number(finalPrice)
       }),
     });
@@ -39,15 +39,22 @@ export async function POST() {
       return NextResponse.json({ success: false, error: errorData.message }, { status: 400 });
     }
 
-  await redis.set("auction_status", "finished"); // 👈 Agregamos esto
-  await redis.set("final_price_achieved", finalPrice); // Guardamos el precio final fijo
+    // 3. PERSISTENCIA EN REDIS
+    const cleanId = itemId.replace('MLM', '');
+    const finalLink = `https://articulo.mercadolibre.com.mx/MLM-${cleanId}`;
 
-  // 3. Disparar el evento de Hype a todos (Landing, OBS, Admin)
-  await pusherServer.trigger("auction-channel", "start-countdown", {
-    finalPrice: Number(finalPrice),
-    seconds: 10,
-    mlLink: `https://articulo.mercadolibre.com.mx/${itemId.replace('MLM', 'MLM-')}`
-  });
+    await Promise.all([
+      redis.set("auction_status", "finished"),
+      redis.set("final_price_achieved", finalPrice),
+      redis.set("last_ml_link", finalLink)
+    ]);
+
+    // 4. DISPARO DE HYPE
+    await pusherServer.trigger("auction-channel", "start-countdown", {
+      finalPrice: Number(finalPrice),
+      seconds: 10,
+      mlLink: finalLink
+    });
 
   return NextResponse.json({ success: true });
   } catch (error) {

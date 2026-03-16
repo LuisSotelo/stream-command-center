@@ -1,7 +1,8 @@
-import NextAuth from "next-auth";
+import NextAuth, { NextAuthOptions } from "next-auth";
 import TwitchProvider from "next-auth/providers/twitch";
 
-const handler = NextAuth({
+// 1. Extraemos la configuración a una constante exportable
+export const authOptions: NextAuthOptions = {
   providers: [
     TwitchProvider({
       clientId: process.env.TWITCH_CLIENT_ID!,
@@ -13,16 +14,11 @@ const handler = NextAuth({
       const userId = profile?.sub;
       if (!userId) return false;
 
-      // 1. Obtenemos tu ID (Owner)
       const ownerId = process.env.AUTHORIZED_TWITCH_ID;
-
-      // 2. Obtenemos la lista de IDs (Mods)
       const modIds = process.env.AUTHORIZED_TWITCH_IDS?.split(',') || [];
 
-      // 3. Verificamos si es el dueño O es un moderador autorizado
       const isOwner = userId === ownerId;
       const isMod = modIds.includes(userId);
-
       const isAuthorized = isOwner || isMod;
 
       const userName = (profile as any)?.preferred_username || "Unknown";
@@ -30,7 +26,17 @@ const handler = NextAuth({
       
       return isAuthorized;
     },
+    // Te sugiero agregar este callback para que el ID esté disponible en la sesión
+    async session({ session, token }) {
+      if (session.user) {
+        (session.user as any).id = token.sub;
+      }
+      return session;
+    }
   },
-});
+};
+
+// 2. El handler de NextAuth usa esa constante
+const handler = NextAuth(authOptions);
 
 export { handler as GET, handler as POST };

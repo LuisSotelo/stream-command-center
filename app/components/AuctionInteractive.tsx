@@ -20,6 +20,7 @@ export function AuctionInteractive() {
   const [isFinished, setIsFinished] = useState(false);
   const [lastUser, setLastUser] = useState<{name: string, amount: number} | null>(null);
   const [topContributors, setTopContributors] = useState<{user: string, score: number}[]>([]);
+  const [mlLink, setMlLink] = useState<string | null>(null);
 
   let lastSoundTime = 0;
 
@@ -69,15 +70,24 @@ export function AuctionInteractive() {
     // Initial Fetches
     fetch("/api/price").then(res => res.json()).then(data => {
       if (data.newPrice) setPrice(Number(data.newPrice));
-        // --- VERIFICAR SI YA TERMINÓ ---
-        if (data.auction_status === "finished") {
-          setIsFinished(true);
-          setShowFinalLink(true); // Esto muestra el botón de ML y el precio final
-        }
 
-        // Calculamos el nivel basándonos en el precio que acabamos de traer
-        const levelAtLoad = getCurrentLevel(data.newPrice);
-        setCurrentLevel(levelAtLoad.name);
+      // --- NUEVO: Traer el link si ya existe ---
+      if (data.mlLink) {
+        setMlLink(data.mlLink);
+      }
+
+      // Seteamos el ganador si existe (para el mensaje de "GOLPE DE GRACIA POR")
+      if (data.lastWinner) setLastUser({ name: data.lastWinner, amount: 0 });
+
+      // --- VERIFICAR SI YA TERMINÓ ---
+      if (data.auction_status === "finished") {
+        setIsFinished(true);
+        setShowFinalLink(true); // Esto muestra el botón de ML y el precio final
+      }
+
+      // Calculamos el nivel basándonos en el precio que acabamos de traer
+      const levelAtLoad = getCurrentLevel(data.newPrice);
+      setCurrentLevel(levelAtLoad.name);
     });
 
     fetch("/api/game-progress").then(res => res.json()).then(data => {
@@ -139,6 +149,7 @@ export function AuctionInteractive() {
     });
 
     auctionChannel.bind("start-countdown", (data: any) => {
+      setMlLink(data.mlLink);
       setCountdown(data.seconds);
       
       // Iniciar el reloj interno
@@ -347,14 +358,18 @@ export function AuctionInteractive() {
               </div>
               
               {/* BOTÓN DE MERCADO LIBRE */}
-              <a 
-                href="https://articulo.mercadolibre.com.mx/MLM-TU-PUBLICACION" 
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-block mt-10 bg-[#FFE600] text-black px-16 py-6 rounded-full font-bold text-3xl shadow-[0_0_50px_#FFE600] hover:scale-110 transition-transform active:scale-95 uppercase italic"
-              >
-                ¡RECLAMAR AHORA!
-              </a>
+              {showFinalLink && mlLink && (
+                <motion.a 
+                  initial={{ scale: 0.5, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  href={mlLink} 
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-block mt-10 bg-[#FFE600] text-black px-16 py-6 rounded-full font-black text-3xl shadow-[0_0_50px_#FFE600] hover:scale-110 transition-all active:scale-95 uppercase italic"
+                >
+                  ¡RECLAMAR AHORA!
+                </motion.a>
+              )}
             </motion.div>
 
             {/* 3. SLOT DE MARKETING: INSTANT GAMING */}

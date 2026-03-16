@@ -14,6 +14,7 @@ export default function AdminDashboard() {
   const [progress, setProgress] = useState(0);
   const [logs, setLogs] = useState<any[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [cooldownRemaining, setCooldownRemaining] = useState(0);
 
   // --- ESTATUS DE CONEXIONES ---
   const [botStatus, setBotStatus] = useState("OFFLINE");
@@ -30,6 +31,7 @@ export default function AdminDashboard() {
   const lastDonationTimeRef = useRef(Date.now());
   const lastLevelChangeTimeRef = useRef(Date.now());
   const lastLevelRef = useRef(level.name);
+  const [joaquinMsg, setJoaquinMsg] = useState("");
 
   // Sincronizamos los refs cada vez que cambian estas variables para que el bot siempre tenga la info actualizada
   useEffect(() => {
@@ -58,7 +60,7 @@ export default function AdminDashboard() {
         const logsData = logsRes.ok ? await logsRes.json() : { success: false, logs: [] };
         const statusData = statusRes.ok ? await statusRes.json() : { isLive: false, connection: "OFFLINE" };
         const priceData = priceRes.ok ? await priceRes.json() : {};
-        const progData = progRes.ok ? await progRes.json() : { success: false };
+        const progData = progRes.ok ? await progRes.json() : { success: false, progress: 0 };
         const mlData = mlRes.ok ? await mlRes.json() : { status: "OFFLINE" };
 
         if (logsData.success) setLogs(logsData.logs);
@@ -66,6 +68,9 @@ export default function AdminDashboard() {
         setTwitchStatus(statusData.connection);
         if (priceData.newPrice) setCurrentPrice(priceData.newPrice);
         if (progData.success) setProgress(progData.progress);
+        if (progData.remainingMins) {
+            setCooldownRemaining(progData.remainingMins * 60);
+          }
         setMlStatus(mlData.status || "OFFLINE");
       } catch (error) {
         console.error("Error sincronizando dashboard:", error);
@@ -73,6 +78,24 @@ export default function AdminDashboard() {
         setMlStatus("OFFLINE");
       } finally {
         setLoading(false);
+      }
+    };
+
+    const sendJoaquinSays = async () => {
+      if (!joaquinMsg.trim()) return;
+
+      try {
+        await fetch("/api/joaquin-speak", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            message: joaquinMsg,
+            admin: session?.user?.name || "Mod" 
+          }),
+        });
+        setJoaquinMsg(""); // Limpiar input
+      } catch (error) {
+        console.error("Error al hacer hablar a Joaquín:", error);
       }
     };
 
@@ -153,6 +176,7 @@ export default function AdminDashboard() {
 
     // 2. Suscripción Pusher (Unificada)
     const channel = pusherClient.subscribe("auction-channel");
+    const gameChannel = pusherClient.subscribe("game-channel");
     
     // -- Listeners de Pusher --
     channel.bind("admin-log-update", (newLog: any) => {
@@ -160,7 +184,20 @@ export default function AdminDashboard() {
     });
 
     channel.bind("price-update", (data: any) => {
-      if (data.newPrice) setCurrentPrice(data.newPrice);
+      if (data.newPrice) {
+        setCurrentPrice(data.newPrice);
+        
+        // 1. Resetear el tiempo de "última donación" (porque el precio se movió)
+        lastDonationTimeRef.current = Date.now(); 
+
+        // 2. Lógica para detectar cambio de nivel y resetear el cronómetro de fase
+        const newLevel = getCurrentLevel(data.newPrice);
+        if (newLevel.name !== lastLevelRef.current) {
+          console.log(`🚀 Nivel cambiado de ${lastLevelRef.current} a ${newLevel.name}`);
+          lastLevelRef.current = newLevel.name;
+          lastLevelChangeTimeRef.current = Date.now();
+        }
+      }
     });
 
     channel.bind("joaquin-troll", (data: any) => {
@@ -182,6 +219,27 @@ export default function AdminDashboard() {
           clientRef.current?.say(channelName, `🏆 ¡PRECIO FINAL: $${data.finalPrice} MXN! COMPRA AQUÍ: ${data.mlLink}`);
         }
       }, 1000);
+    });
+
+    channel.bind("joaquin-says", (data: any) => {
+      const chName = process.env.NEXT_PUBLIC_TWITCH_CHANNEL || "LuisHongo";
+      clientRef.current?.say(chName, `🤖 ${data.message} 🐽`);
+    });
+
+    gameChannel.bind("progress-update", (data: any) => {
+      if (data.progress !== undefined) {
+        setProgress(data.progress);
+        setCooldownRemaining(600);
+        // Feedback visual opcional
+        setErrorMessage("⚠️ ALGUIEN MÁS YA AUMENTÓ EL PROGRESO");
+        setTimeout(() => setErrorMessage(null), 3000);
+      }
+    });
+
+    gameChannel.bind("reset-cooldown", () => {
+      setCooldownRemaining(0); // Limpia el cronómetro rojo de golpe
+      setErrorMessage("♻️ SISTEMA REINICIADO POR ADMIN");
+      setTimeout(() => setErrorMessage(null), 3000);
     });
 
     // 3. Listener de Comandos Twitch
@@ -233,6 +291,7 @@ export default function AdminDashboard() {
     return () => {
       clearInterval(announcementInterval);
       pusherClient.unsubscribe("auction-channel");
+      pusherClient.unsubscribe("game-channel");
       if (clientRef.current) {
         clientRef.current.disconnect();
         setBotStatus("OFFLINE");
@@ -262,6 +321,17 @@ export default function AdminDashboard() {
     }
   }, [status]);
 
+  // --- CRONÓMETRO DE PRECISIÓN ---
+  useEffect(() => {
+    if (cooldownRemaining <= 0) return;
+
+    const timer = setInterval(() => {
+      setCooldownRemaining((prev) => (prev <= 1 ? 0 : prev - 1));
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [cooldownRemaining > 0]);
+
   const isOwner = session?.user?.email === process.env.NEXT_PUBLIC_OWNER_EMAIL || (session as any)?.user?.id === process.env.NEXT_PUBLIC_OWNER_ID;
 
   const handleDiscount = async (type: string) => {
@@ -288,14 +358,56 @@ export default function AdminDashboard() {
     } catch (error) { console.error("Error:", error); }
   };
 
-  const handleProgressChange = async (value: number) => {
-    setProgress(value);
-    await fetch("/api/game-progress", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ progress: value }),
-    });
-  };
+  const handleProgressChange = async (newValue: number) => {
+    // 1. Si ya hay un cooldown activo, no hacemos nada
+    if (cooldownRemaining > 0) return;
+
+    // 2. Validaciones rápidas con mensajes temporales
+    const diff = newValue - progress;
+
+    if (newValue < progress) {
+      setErrorMessage("⚠️ ERROR: NO PUEDES RETROCEDER LA HISTORIA.");
+      setTimeout(() => setErrorMessage(null), 3000); // Desaparece en 3 seg
+      return;
+    }
+
+    if (diff > 20) {
+      setErrorMessage("⚠️ ERROR: SALTO DEMASIADO GRANDE (MÁX 20%).");
+      setTimeout(() => setErrorMessage(null), 3000); // Desaparece en 3 seg
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/game-progress", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" }, // Importante añadir esto
+        body: JSON.stringify({ 
+          progress: newValue, 
+          admin: session?.user?.name || "Admin" 
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        // Si la API rechaza por Cooldown (429), bloqueamos el UI
+        if (res.status === 429) {
+          setCooldownRemaining(data.remainingMins * 60 || 600);
+        }
+        setErrorMessage(data.message);
+        setTimeout(() => setErrorMessage(null), 5000);
+        return;
+      }
+
+      // ÉXITO: El backend ya disparó el evento a Pusher, 
+      // pero actualizamos local para feedback instantáneo
+            setProgress(newValue);
+            setCooldownRemaining(600); // 10 minutos
+          } catch (e) {
+            setErrorMessage("❌ ERROR CRÍTICO DE CONEXIÓN.");
+            setTimeout(() => setErrorMessage(null), 3000);
+          }
+      };
 
   const handleFinalizeAuction = async () => {
     if (!confirm("¿Estás seguro de finalizar la subasta? Esto activará la cuenta regresiva en vivo.",)) return;
@@ -484,8 +596,7 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* GAME PROGRESS CONTROL */}
-
+        {/* PROGRESO DE JUEGO Y JOAQUÍN TRANSMITER */}
         <div
           className={
             !isLive && !isOwner
@@ -493,42 +604,110 @@ export default function AdminDashboard() {
               : ""
           }
         >
-          <div className="bg-black/40 border border-brand-cyan/30 p-6 rounded-xl shadow-glow-cyan">
-            <h2 className="text-sm mb-6 text-brand-cyan tracking-widest uppercase text-center">
-              Mod_Game_Progress
-            </h2>
+          {/* GAME PROGRESS CONTROL */}
+         <div className={`relative bg-black/40 border transition-all duration-500 p-6 rounded-xl ${cooldownRemaining > 0 ? 'border-red-500/50 shadow-glow-red' : 'border-brand-cyan/30 shadow-glow-cyan'}`}>
+  
+          <h2 className="text-[10px] mb-6 text-brand-cyan tracking-widest uppercase text-center font-black italic">
+            {cooldownRemaining > 0 ? '⚠️ SYSTEM_LOCKDOWN_ACTIVE' : 'Mod_Game_Progress'}
+          </h2>
 
-            <div className="flex flex-col items-center">
-              <span className="text-5xl font-bold text-brand-cyan mb-8 drop-shadow-[0_0_10px_rgba(0,245,255,0.5)]">
-                {progress}%
-              </span>
+          <div className="flex flex-col items-center">
+            {/* Porcentaje: Cambia a rojo si está bloqueado */}
+            <span className={`text-6xl font-black mb-8 transition-colors duration-500 ${cooldownRemaining > 0 ? 'text-red-500' : 'text-brand-cyan drop-shadow-glow'}`}>
+              {progress}%
+            </span>
 
-              <div className="flex gap-2 w-full mb-8">
-                {[5, 10, 25].map((boost) => (
-                  <button
-                    key={boost}
-                    onClick={() =>
-                      handleProgressChange(Math.min(100, progress + boost))
-                    }
-                    className="flex-1 py-2 bg-brand-cyan/10 border border-brand-cyan/40 rounded text-[10px] hover:bg-brand-cyan/30"
-                  >
-                    +{boost}%
-                  </button>
-                ))}
+            {/* Botones de Boost: Se deshabilitan totalmente */}
+            <div className="grid grid-cols-3 gap-2 w-full mb-8">
+              {[5, 10, 20].map((boost) => (
+                <button
+                  key={boost}
+                  disabled={cooldownRemaining > 0 || progress + boost > 100}
+                  onClick={() => handleProgressChange(progress + boost)}
+                  className="py-3 bg-white/5 border border-white/10 rounded-lg text-[10px] font-bold hover:bg-brand-cyan/20 hover:border-brand-cyan disabled:opacity-5 disabled:cursor-not-allowed transition-all"
+                >
+                  +{boost}%
+                </button>
+              ))}
+            </div>
+
+            {/* Slider: Bloqueado si hay cooldown */}
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={progress}
+              disabled={cooldownRemaining > 0}
+              onChange={(e) => handleProgressChange(parseInt(e.target.value))}
+              className="w-full h-2 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-brand-cyan disabled:accent-red-600 disabled:opacity-20"
+            />
+            
+            {/* Mensaje de Persistencia: Solo se ve si hay Cooldown */}
+            {cooldownRemaining > 0 && (
+              <div className="mt-6 p-3 border border-red-500/30 bg-red-500/5 rounded-md w-full text-center animate-pulse">
+                <p className="text-[10px] text-red-500 font-black tracking-tighter">
+                  ALTO AHÍ: SISTEMA SOBRECALENTADO
+                </p>
+                <p className="text-[9px] text-red-400/70 mt-1 font-mono">
+                  PROTOCOLO_SEGURIDAD: {Math.floor(cooldownRemaining / 60)}m {cooldownRemaining % 60}s restantes
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* JOAQUÍN TRANSMITER */}
+          <div className="mt-8 relative group max-w-full">
+            {/* Glow optimizado para no romper el ancho en mobile */}
+            <div className="absolute -inset-0 bg-gradient-to-r from-brand-purple to-brand-cyan opacity-10 group-hover:opacity-30 transition duration-1000 blur-sm rounded-xl"></div>
+            
+            <div className="relative bg-[#0a0a0a] border border-brand-purple/40 p-4 md:p-6 rounded-xl shadow-[0_0_15px_rgba(168,85,247,0.1)]">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-purple opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-purple"></span>
+                  </span>
+                  <h3 className="text-[10px] md:text-[11px] text-brand-purple uppercase font-black tracking-widest">
+                    Joaquín_Transmitter
+                  </h3>
+                </div>
+                <span className="hidden sm:inline text-[8px] text-brand-purple/50 font-mono">JOAQUIN_PROT_V1</span>
               </div>
 
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={progress}
-                onChange={(e) => handleProgressChange(parseInt(e.target.value))}
-                className="w-full h-2 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-brand-cyan mb-4"
-              />
+              {/* Flex-col en mobile, Flex-row en desktop */}
+              <div className="flex flex-col md:flex-row gap-3">
+                <input 
+                  type="text" 
+                  value={joaquinMsg}
+                  onChange={(e) => setJoaquinMsg(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && sendJoaquinSays()}
+                  placeholder="Mensaje porcino..."
+                  className="bg-black/80 border border-brand-purple/30 rounded-lg px-4 py-3 text-xs flex-1 focus:outline-none focus:border-brand-purple text-brand-purple placeholder:text-brand-purple/30 font-mono transition-all w-full"
+                />
+                <button 
+                  onClick={sendJoaquinSays}
+                  className="w-full md:w-auto bg-brand-purple/10 hover:bg-brand-purple hover:text-white text-brand-purple px-6 py-3 rounded-lg text-[10px] transition-all duration-300 border border-brand-purple font-black tracking-widest uppercase shadow-[0_0_10px_rgba(168,85,247,0.2)]"
+                >
+                  ENVIAR
+                </button>
+              </div>
+              
+              <div className="flex justify-between items-center mt-4">
+                <p className="text-[7px] md:text-[8px] text-gray-500 italic uppercase">
+                  ⚠️ LO QUE ESCRIBAS AQUÍ, JOAQUÍN LO DIRÁ, TEN CUIDADO.
+                </p>
+                <div className="flex gap-1">
+                  <div className="w-1 h-1 bg-brand-purple/30"></div>
+                  <div className="w-1 h-1 bg-brand-purple/60"></div>
+                  <div className="w-1 h-1 bg-brand-purple"></div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
+        {/* COMANDOS */}
         <div className="bg-black/40 border border-brand-cyan/20 p-6 rounded-xl col-span-1 md:col-span-2">
           <h2 className="text-[10px] mb-4 text-brand-cyan tracking-widest uppercase italic opacity-80">
             // MOD_COMMAND_DATABASE
