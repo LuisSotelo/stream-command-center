@@ -335,6 +335,14 @@ export default function AdminDashboard() {
   const isOwner = session?.user?.email === process.env.NEXT_PUBLIC_OWNER_EMAIL || (session as any)?.user?.id === process.env.NEXT_PUBLIC_OWNER_ID;
 
   const handleDiscount = async (type: string) => {
+    if (twitchStatus === "CONNECTED") {
+      setErrorMessage("ℹ️ INTEGRACIÓN ACTIVA: Twitch está procesando los descuentos automáticamente.");
+      setTimeout(() => setErrorMessage(null), 4000);
+      
+      // Opcional: Si quieres que los MODS no puedan picar nada si Twitch va bien, descomenta esto:
+      // if (!isOwner) return; 
+    }
+    
     if (!isLive && !isOwner) {
       setErrorMessage("⚠️ EL SISTEMA ESTÁ BLOQUEADO: EL STREAM NO ESTÁ ACTIVO.");
       setTimeout(() => setErrorMessage(null), 5000); // Se quita en 5 seg
@@ -529,11 +537,16 @@ export default function AdminDashboard() {
           className={`transition-all duration-500 ${(!isLive && !isOwner) || twitchStatus !== "CONNECTED" ? "opacity-30 grayscale pointer-events-none" : "opacity-100"}`}
         >
           <div className="bg-black/40 border border-brand-purple/30 p-6 rounded-xl shadow-glow-purple">
-            <h2 className="text-sm mb-6 text-brand-cyan tracking-widest uppercase italic">
-              {twitchStatus === "CONNECTED"
-                ? "Auction_Direct_Input"
-                : "⚠️ TWITCH_OFFLINE"}
-            </h2>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-sm text-brand-cyan tracking-widest uppercase italic">
+                Auction_Direct_Input
+              </h2>
+              {twitchStatus === "CONNECTED" && (
+                <span className="text-[8px] text-green-400 animate-pulse font-black border border-green-500/30 px-2 py-0.5 rounded">
+                  AUTO_SYNC_ON
+                </span>
+              )}
+            </div>
 
             <div className="flex flex-col gap-4">
               {/* Estos botones ahora se bloquean si TwitchStatus no es CONNECTED */}
