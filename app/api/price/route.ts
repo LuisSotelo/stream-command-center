@@ -82,6 +82,11 @@ export async function POST(req: Request) {
     switch (type) {
       case 'SUB': discount = level.rates.sub; break;
       case 'PRIME': discount = level.rates.prime; break;
+      case 'GIFT_BOMB':
+        // Multiplicamos el valor de una sub por la cantidad regalada
+        discount = level.rates.sub * (amount || 1); 
+        joaquinComment = `🤖 ¡ATENCIÓN! @${user} acaba de soltar una bomba de ${amount} subs. ¡EL PRECIO SE ESTÁ DESINTEGRANDO! 🐷🚀`;
+        break;
       case 'BITS_100': discount = level.rates.bits100; break;
       case 'BITS_500': discount = level.rates.bits500; break;
       case 'BITS_1000': discount = level.rates.bits1000; break;

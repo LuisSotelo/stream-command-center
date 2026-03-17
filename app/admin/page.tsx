@@ -341,7 +341,7 @@ export default function AdminDashboard() {
       } 
       else {
         const currentLevel = levelRef.current; 
-        msg = `🤖 [SISTEMA]: ¡Subasta activa! Estamos en ${currentLevel.name}. 📉 DESCUENTOS: Sub T1 -$${currentLevel.rates.sub} | Prime -$${currentLevel.rates.prime} | 100 Bits -$${currentLevel.rates.bits100} | 1000 Bits -$${currentLevel.rates.bits1000}. 🚀`;
+        msg = `🤖 [SISTEMA]: ¡Subasta activa! Estamos en ${currentLevel.name}. 📉 DESCUENTOS: Sub T1 -$${currentLevel.rates.sub} | Prime -$${currentLevel.rates.prime} | 100 Bits -$${currentLevel.rates.bits100} | 500 Bits -$${currentLevel.rates.bits500} | 1000 Bits -$${currentLevel.rates.bits1000}. 🚀`;
       }
 
       clientRef.current.say(channelName, msg);

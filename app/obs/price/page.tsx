@@ -9,6 +9,7 @@ export default function ObsPriceOverlay() {
   const [price, setPrice] = useState<number | null>(null);
   const [isVisible, setIsVisible] = useState(false);
   const [currentLevel, setCurrentLevel] = useState("BASE");
+  const levelRef = useRef("BASE");
   const [triggerShake, setTriggerShake] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
   const latestPriceRef = useRef<number | null>(null);
@@ -34,6 +35,10 @@ export default function ObsPriceOverlay() {
     const interval = setInterval(checkTwitchStatus, 120000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    levelRef.current = currentLevel;
+  }, [currentLevel]);
 
   // 2. Efecto principal: Precios, Pusher y Conteo
   useEffect(() => {
@@ -65,7 +70,15 @@ export default function ObsPriceOverlay() {
         // 1. Primero activamos la visibilidad y el shake con el precio VIEJO (el que ya estaba en el estado)
         setIsVisible(true);
         setTriggerShake(true);
-        setCurrentLevel(data.levelName || "BASE");
+
+
+        // USAMOS LA REF PARA COMPARAR NIVELES SIN REINICIAR EL EFFECT
+        if (data.levelName && data.levelName !== levelRef.current) {
+          setCurrentLevel(data.levelName);
+          setShowLevelUp(true);
+          new Audio("/sounds/level-up.mp3").play().catch(() => {});
+          setTimeout(() => setShowLevelUp(false), 3000);
+        }
 
         // Usamos una única instancia de audio cargada previamente para evitar el bloqueo
         const winAudio = new Audio("/sounds/casino-win.mp3");
@@ -130,7 +143,7 @@ export default function ObsPriceOverlay() {
     return () => {
       pusherClient.unsubscribe("auction-channel");
     };
-  }, [currentLevel]); // Agregamos currentLevel para que los binds tengan el estado fresco
+  }, []);
 
   const isFinalMode = currentLevel === 'MODO FINAL';
 
