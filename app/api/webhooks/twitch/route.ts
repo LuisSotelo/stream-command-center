@@ -7,49 +7,73 @@ export async function POST(req: Request) {
   const messageId = req.headers.get("twitch-eventsub-message-id") || "";
   const timestamp = req.headers.get("twitch-eventsub-message-timestamp") || "";
 
-  // 1. Verificar que sea Twitch de verdad
   if (!verifyTwitchSignature(signature, messageId, timestamp, body)) {
     return NextResponse.json({ error: "Invalid Signature" }, { status: 401 });
   }
 
   const data = JSON.parse(body);
 
-  // 2. Manejar el "Challenge" (Twitch lo pide una sola vez al activar el webhook)
   if (req.headers.get("twitch-eventsub-message-type") === "webhook_callback_verification") {
     return new Response(data.challenge, { status: 200 });
   }
 
-  // 3. Lógica de Descuentos Reales
-  const eventType = data.subscription.type; // 'channel.subscribe' o 'channel.cheer'
+  const eventType = data.subscription.type;
   const event = data.event;
+  let userName = event.user_name || "Anónimo";
+  
+  // --- LÓGICA DE DETECCIÓN DE EVENTOS ---
 
-  let discountType = "";
-  let userName = event.user_name;
+  // 1. REGALO DE PAQUETES (GIFT BOMB)
+  if (eventType === "channel.subscription.gift") {
+    const totalGifts = event.total; // Cantidad de subs regaladas (ej. 5, 10, 50)
+    
+    // Enviamos una petición especial para que el backend multiplique el descuento
+    fetch(`${process.env.NEXTAUTH_URL}/api/price`, {
+      method: "POST",
+      headers: { 
+        "Content-Type": "application/json",
+        "x-twitch-secret": process.env.TWITCH_WEBHOOK_SECRET! 
+      },
+      body: JSON.stringify({ 
+        type: "GIFT_BOMB", // Nuevo tipo para manejar volumen
+        user: userName, 
+        amount: totalGifts 
+      }),
+    }).catch(err => console.error("Error en Gift Bomb:", err));
+  }
 
-  if (eventType === "channel.subscribe" || eventType === "channel.subscription.gift") {
-    discountType = "SUB";
-  } else if (eventType === "channel.cheer") {
+  // 2. SUBS INDIVIDUALES (Nuevas, Primes y Resubs)
+  else if (eventType === "channel.subscribe" || eventType === "channel.subscription.message") {
+    // IMPORTANTE: Evitamos duplicar si la sub viene de un regalo (el evento gift ya la cubrió)
+    if (event.is_gift) return NextResponse.json({ received: true });
+
+    fetch(`${process.env.NEXTAUTH_URL}/api/price`, {
+      method: "POST",
+      headers: { 
+        "Content-Type": "application/json",
+        "x-twitch-secret": process.env.TWITCH_WEBHOOK_SECRET! 
+      },
+      body: JSON.stringify({ type: "SUB", user: userName }),
+    }).catch(err => console.error("Error en Sub:", err));
+  }
+
+  // 3. BITS (CHEERS)
+  else if (eventType === "channel.cheer") {
+    let discountType = "";
     const bits = event.bits;
     if (bits >= 1000) discountType = "BITS_1000";
     else if (bits >= 500) discountType = "BITS_500";
     else if (bits >= 100) discountType = "BITS_100";
-    else {
-      // 🐷 AQUÍ ENTRA JOAQUÍN EL SEMIDIOS
-      // Si mandan 1 a 99 bits, o cualquier cantidad que no llegue al siguiente tier
-      discountType = "BITS_TROLL"; 
-    } 
-  }
+    else discountType = "BITS_TROLL";
 
-  if (discountType) {
-    // LLAMAMOS A TU PROPIA API DE PRECIO (Internamente)
-    await fetch(`${process.env.NEXTAUTH_URL}/api/price`, {
+    fetch(`${process.env.NEXTAUTH_URL}/api/price`, {
       method: "POST",
       headers: { 
         "Content-Type": "application/json",
-        "x-twitch-secret": process.env.TWITCH_WEBHOOK_SECRET! // Para saltar el login del admin
+        "x-twitch-secret": process.env.TWITCH_WEBHOOK_SECRET! 
       },
-      body: JSON.stringify({ type: discountType, user: userName, amount: event.bits || 0 }),
-    });
+      body: JSON.stringify({ type: discountType, user: userName, amount: bits }),
+    }).catch(err => console.error("Error en Bits:", err));
   }
 
   return NextResponse.json({ received: true });
