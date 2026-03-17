@@ -103,6 +103,12 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (status !== "authenticated") return;
     fetchData();
+
+    if (session?.user?.email !== process.env.NEXT_PUBLIC_OWNER_EMAIL) {
+      console.log("Joaquín ya está en su puesto, no necesitas conectarlo tú.");
+      return; 
+    }
+    
     // 1. Conexión Twitch (TMI)
     clientRef.current = new tmi.Client({
       options: { 
@@ -122,42 +128,6 @@ export default function AdminDashboard() {
     clientRef.current.connect()
       .then(() => setBotStatus("ONLINE"))
       .catch(() => setBotStatus("ERROR"));
-
-    // --- EL PREGONERO TÓXICO (Versión Stream 6 Horas) ---
-    const announcementInterval = setInterval(() => {
-      if (clientRef.current && isLiveRef.current && botStatus === "ONLINE") {
-        const channelName = process.env.NEXT_PUBLIC_TWITCH_CHANNEL || "LuisHongo";
-        const now = Date.now();
-        const minsSinceDonation = (now - lastDonationTimeRef.current) / (60 * 1000);
-        const minsInLevel = (now - lastLevelChangeTimeRef.current) / (60 * 1000);
-
-        let msg = "";
-
-        if (minsInLevel >= 120) {
-          const savageLevelQuotes = [
-            `🤖 [ESTADO CRÍTICO]: Llevamos más de dos horas en la Fase ${levelRef.current.name}. ¿Se les olvidó cómo usar la tarjeta o ocupan un tutorial? 🐷`,
-            `🤖 [ESTADO CRÍTICO]: A este paso, el Pokémon Z-A se va a deshacer antes de que bajen de nivel. Qué nivel de tacañería... 🐽`,
-            `🤖 [ESTADO CRÍTICO]: ¿Siguen aquí? Pensé que el stream se había congelado, pero no, es solo su generosidad la que está bajo cero. 💅`
-          ];
-          msg = savageLevelQuotes[Math.floor(Math.random() * savageLevelQuotes.length)];
-        } 
-        else if (minsSinceDonation >= 60) {
-          const stingyQuotes = [
-            "🤖 [AVISO]: 60 minutos de silencio financiero. El chat parece un museo: mucha gente mirando, nadie aportando. 🖼️",
-            "🤖 [AVISO]: ¿Están ahorrando para el retiro o qué? Suelten unos bits o una sub, que Luis no vive de puro aire. 🍱",
-            "🤖 [AVISO]: Mi base de datos dice que son tacaños, pero mi corazón de cerdo dice que son MUY tacaños. ¡Muevan el precio! 🐽"
-          ];
-          msg = stingyQuotes[Math.floor(Math.random() * stingyQuotes.length)];
-        } 
-        // CASO C: PREGONERO DE MANTENIMIENTO (Cada 20 min si todo fluye)
-        else {
-          const currentLevel = levelRef.current; 
-          msg = `🤖 [SISTEMA]: ¡Subasta activa! Estamos en ${currentLevel.name}. 📉 DESCUENTOS: Sub T1 -$${currentLevel.rates.sub} | Prime -$${currentLevel.rates.prime} | 100 Bits -$${currentLevel.rates.bits100} | 500 Bits -$${currentLevel.rates.bits500} | 1000 Bits -$${currentLevel.rates.bits1000}. ¡Aprovechen para bajar ese precio final! 🚀`;
-        }
-
-        clientRef.current.say(channelName, msg);
-      }
-    }, 20 * 60 * 1000); // El chequeo sigue siendo cada 20 min, pero los insultos solo salen si cumplen los requisitos
 
     // --- LISTENERS DE RECONEXIÓN ---
     clientRef.current.on("reconnect", () => {
@@ -222,8 +192,11 @@ export default function AdminDashboard() {
     });
 
     channel.bind("joaquin-says", (data: any) => {
-      const chName = process.env.NEXT_PUBLIC_TWITCH_CHANNEL || "LuisHongo";
-      clientRef.current?.say(chName, `🤖 ${data.message} 🐽`);
+      // SOLO la instancia del Owner debe ejecutar el envío a Twitch
+      if (session?.user?.email === process.env.NEXT_PUBLIC_OWNER_EMAIL) {
+        const chName = process.env.NEXT_PUBLIC_TWITCH_CHANNEL || "LuisHongo";
+        clientRef.current?.say(chName, `🤖 ${data.message} 🐽`);
+      }
     });
 
     gameChannel.bind("progress-update", (data: any) => {
@@ -289,7 +262,6 @@ export default function AdminDashboard() {
     });
 
     return () => {
-      clearInterval(announcementInterval);
       pusherClient.unsubscribe("auction-channel");
       pusherClient.unsubscribe("game-channel");
       if (clientRef.current) {
@@ -331,6 +303,56 @@ export default function AdminDashboard() {
 
     return () => clearInterval(timer);
   }, [cooldownRemaining > 0]);
+
+  useEffect(() => {
+  // 1. REGLA DE ORO: Solo el Owner ejecuta el pregonero para evitar spam multimod
+  const isOwner = session?.user?.email === process.env.NEXT_PUBLIC_OWNER_EMAIL;
+  if (!isOwner || botStatus !== "ONLINE" || !isLive) return;
+
+  console.log("✅ Pregonero de Joaquín iniciado...");
+
+  const announcementInterval = setInterval(() => {
+    // Verificación de seguridad interna
+    if (clientRef.current && botStatus === "ONLINE") {
+      const channelName = process.env.NEXT_PUBLIC_TWITCH_CHANNEL || "LuisHongo";
+      const now = Date.now();
+      
+      // Calculamos tiempos usando los REFS (que siempre tienen la info fresca)
+      const minsSinceDonation = (now - lastDonationTimeRef.current) / 60000;
+      const minsInLevel = (now - lastLevelChangeTimeRef.current) / 60000;
+
+      let msg = "";
+
+      if (minsInLevel >= 120) {
+        const savageLevelQuotes = [
+          `🤖 [ESTADO CRÍTICO]: Llevamos más de dos horas en la Fase ${levelRef.current.name}. ¿Ocupan un tutorial para usar la tarjeta? 🐷`,
+          `🤖 [ESTADO CRÍTICO]: A este paso, el Pokémon Z-A va a ser retro antes de que bajen de nivel. 🐽`,
+          `🤖 [ESTADO CRÍTICO]: ¿Siguen aquí? Su generosidad está bajo cero. 💅`
+        ];
+        msg = savageLevelQuotes[Math.floor(Math.random() * savageLevelQuotes.length)];
+      } 
+      else if (minsSinceDonation >= 60) {
+        const stingyQuotes = [
+          "🤖 [AVISO]: 60 minutos de silencio financiero. El chat parece un museo. 🖼️",
+          "🤖 [AVISO]: Suelten unos bits o una sub, que Luis no vive de puro aire. 🍱",
+          "🤖 [AVISO]: Mi corazón de cerdo dice que son MUY tacaños. ¡Muevan el precio! 🐽"
+        ];
+        msg = stingyQuotes[Math.floor(Math.random() * stingyQuotes.length)];
+      } 
+      else {
+        const currentLevel = levelRef.current; 
+        msg = `🤖 [SISTEMA]: ¡Subasta activa! Estamos en ${currentLevel.name}. 📉 DESCUENTOS: Sub T1 -$${currentLevel.rates.sub} | Prime -$${currentLevel.rates.prime} | 100 Bits -$${currentLevel.rates.bits100} | 1000 Bits -$${currentLevel.rates.bits1000}. 🚀`;
+      }
+
+      clientRef.current.say(channelName, msg);
+    }
+  }, 20 * 60 * 1000); // 20 minutos
+
+  return () => {
+    console.log("🛑 Pregonero detenido.");
+    clearInterval(announcementInterval);
+  };
+}, [botStatus, isLive, session]); // Se reinicia si el bot reconecta o cambia el estado del stream
 
   const isOwner = session?.user?.email === process.env.NEXT_PUBLIC_OWNER_EMAIL || (session as any)?.user?.id === process.env.NEXT_PUBLIC_OWNER_ID;
 
