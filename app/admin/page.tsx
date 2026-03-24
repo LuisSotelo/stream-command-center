@@ -112,6 +112,8 @@ function AdminContent() {
       console.log("Joaquín ya está en su puesto, no necesitas conectarlo tú.");
       return; 
     }
+
+    if (role === "pregonero") return;
     
     // 1. Conexión Twitch (TMI)
     clientRef.current = new tmi.Client({
@@ -129,9 +131,17 @@ function AdminContent() {
       channels: [process.env.NEXT_PUBLIC_TWITCH_CHANNEL || "LuisHongo"],
     });
 
+    if (process.env.NEXT_PUBLIC_TWITCH_BOT_OAUTH) {
     clientRef.current.connect()
-      .then(() => setBotStatus("ONLINE"))
-      .catch(() => setBotStatus("ERROR"));
+            .then(() => setBotStatus("ONLINE"))
+            .catch((err) => {
+              console.error("Twitch Connection Error:", err);
+              setBotStatus("ERROR");
+            });
+      } else {
+          console.warn("⚠️ No se encontró TWITCH_BOT_OAUTH. El bot de comandos no iniciará.");
+          setBotStatus("OFFLINE");
+      }
 
     // --- LISTENERS DE RECONEXIÓN ---
     clientRef.current.on("reconnect", () => {
@@ -307,63 +317,6 @@ function AdminContent() {
 
     return () => clearInterval(timer);
   }, [cooldownRemaining > 0]);
-
-  useEffect(() => {
-  // --- NUEVA REGLA DE ORO MEJORADA ---
-  // Solo arranca si:
-  // 1. Eres el Owner (Email check)
-  // 2. La URL tiene el parámetro ?role=pregonero
-  // 3. El bot está Online y el Stream está Live
-  const isOwner = session?.user?.email === process.env.NEXT_PUBLIC_OWNER_EMAIL;
-  const isPregoneroRole = role === "pregonero";
-
-  if (!isOwner || !isPregoneroRole || botStatus !== "ONLINE" || !isLive) {
-    console.log("⏭️ Pregonero en modo silencioso (No es la instancia de OBS o falta sesión)");
-    return;
-  }
-
-  console.log("✅ [INSTANCIA MAESTRA]: Pregonero de Joaquín iniciado en OBS...");
-
-  const announcementInterval = setInterval(() => {
-    if (clientRef.current && botStatus === "ONLINE") {
-      const channelName = process.env.NEXT_PUBLIC_TWITCH_CHANNEL || "LuisHongo";
-      const now = Date.now();
-      
-      const minsSinceDonation = (now - lastDonationTimeRef.current) / 60000;
-      const minsInLevel = (now - lastLevelChangeTimeRef.current) / 60000;
-
-      let msg = "";
-
-      if (minsInLevel >= 120) {
-        const savageLevelQuotes = [
-          `🤖 [ESTADO CRÍTICO]: Llevamos más de dos horas en la Fase ${levelRef.current.name}. ¿Ocupan un tutorial para usar la tarjeta? 🐷`,
-          `🤖 [ESTADO CRÍTICO]: A este paso, el Pokémon Z-A va a ser retro antes de que bajen de nivel. 🐽`,
-          `🤖 [ESTADO CRÍTICO]: ¿Siguen aquí? Su generosidad está bajo cero. 💅`
-        ];
-        msg = savageLevelQuotes[Math.floor(Math.random() * savageLevelQuotes.length)];
-      } 
-      else if (minsSinceDonation >= 60) {
-        const stingyQuotes = [
-          "🤖 [AVISO]: 60 minutos de silencio financiero. El chat parece un museo. 🖼️",
-          "🤖 [AVISO]: Suelten unos bits o una sub, que Luis no vive de puro aire. 🍱",
-          "🤖 [AVISO]: Mi corazón de cerdo dice que son MUY tacaños. ¡Muevan el precio! 🐽"
-        ];
-        msg = stingyQuotes[Math.floor(Math.random() * stingyQuotes.length)];
-      } 
-      else {
-        const currentLevel = levelRef.current; 
-        msg = `🤖 [SISTEMA]: ¡Subasta activa! Estamos en ${currentLevel.name}. 📉 DESCUENTOS: Sub T1 -$${currentLevel.rates.sub} | Prime -$${currentLevel.rates.prime} | 100 Bits -$${currentLevel.rates.bits100} | 500 Bits -$${currentLevel.rates.bits500} | 1000 Bits -$${currentLevel.rates.bits1000}. 🚀`;
-      }
-
-      clientRef.current.say(channelName, msg);
-    }
-  }, 20 * 60 * 1000); // 20 minutos
-
-  return () => {
-    console.log("🛑 Pregonero detenido.");
-    clearInterval(announcementInterval);
-  };
-}, [botStatus, isLive, session, role]); // Añadimos 'role' a las dependencias
 
   const isOwner = session?.user?.email === process.env.NEXT_PUBLIC_OWNER_EMAIL || (session as any)?.user?.id === process.env.NEXT_PUBLIC_OWNER_ID;
 

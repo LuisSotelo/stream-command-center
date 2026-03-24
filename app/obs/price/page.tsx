@@ -4,6 +4,9 @@ import { pusherClient } from "@/lib/pusher";
 import { AnimatedPrice } from "../../components/AnimatedPrice";
 import { AnimatePresence, motion } from "framer-motion";
 import { getCurrentLevel } from "@/lib/auction-logic";
+import * as tmi from "tmi.js";
+import { useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 
 export default function ObsPriceOverlay() {
   const [price, setPrice] = useState<number | null>(null);
@@ -18,6 +21,15 @@ export default function ObsPriceOverlay() {
   const [isLive, setIsLive] = useState<boolean>(false);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [lastUser, setLastUser] = useState<{name: string, amount: number} | null>(null);
+  const clientRef = useRef<tmi.Client | null>(null);
+  const searchParams = useSearchParams();
+  const role = searchParams.get("role");
+  const { data: session } = useSession();
+  const priceRef = useRef(price);
+  const currentLevelRef = useRef(getCurrentLevel(price || 1200));
+  const levelNameRef = useRef(currentLevel);
+  const lastDonationTimeRef = useRef(Date.now());
+  const lastLevelChangeTimeRef = useRef(Date.now());
 
   // 1. Efecto para verificar el estatus de Twitch (Independiente)
   useEffect(() => {
@@ -112,6 +124,13 @@ export default function ObsPriceOverlay() {
         setTriggerEvent(data.specialEvent.name);
         setTimeout(() => setTriggerEvent(null), 5000);
       }
+
+      lastDonationTimeRef.current = Date.now();
+    
+      const newLevel = getCurrentLevel(Number(data.newPrice));
+      if (newLevel.name !== levelRef.current) {
+        lastLevelChangeTimeRef.current = Date.now();
+      }
     });
 
     // --- ESCUCHAR CONTEO FINAL ---
@@ -144,6 +163,84 @@ export default function ObsPriceOverlay() {
       pusherClient.unsubscribe("auction-channel");
     };
   }, []);
+
+  useEffect(() => {
+    priceRef.current = price;
+    if (price !== null) {
+      currentLevelRef.current = getCurrentLevel(price);
+    }
+  }, [price]);
+
+  // --- LÓGICA MAESTRA DEL PREGONERO ---
+  useEffect(() => {
+    const isOwner = session?.user?.email === process.env.NEXT_PUBLIC_OWNER_EMAIL;
+    const isPregoneroRole = role === "pregonero";
+
+    // Debug para OBS
+    console.log("🛠️ SISTEMA_PREGONERO:", { isOwner, isPregoneroRole, isLive });
+
+    if (!isOwner || !isPregoneroRole || !isLive) return;
+
+    // 1. Conexión Twitch (TMI) exclusiva para OBS
+    clientRef.current = new tmi.Client({
+      options: { debug: false },
+      connection: { reconnect: true, secure: true },
+      identity: {
+        username: "ChanchoJoaquin",
+        password: process.env.NEXT_PUBLIC_TWITCH_BOT_OAUTH || "",
+      },
+      channels: [process.env.NEXT_PUBLIC_TWITCH_CHANNEL || "LuisHongo"],
+    });
+
+    clientRef.current.connect().catch(console.error);
+    console.log("✅ [OBS_ENGINE]: Joaquín conectado y listo para pregonar.");
+
+    const announcementInterval = setInterval(() => {
+      if (clientRef.current && isLive) {
+        const channelName = process.env.NEXT_PUBLIC_TWITCH_CHANNEL || "LuisHongo";
+
+        const level = currentLevelRef.current;
+        const p = priceRef.current;
+        const now = Date.now();
+        
+        const minsSinceDonation = (now - lastDonationTimeRef.current) / 60000;
+        const minsInLevel = (now - lastLevelChangeTimeRef.current) / 60000;
+
+        let msg = "";
+
+        if (minsInLevel >= 120) {
+          const savageLevelQuotes = [
+            `🤖 [ESTADO CRÍTICO]: Llevamos más de dos horas en la Fase ${level.name}. ¿Ocupan un tutorial para usar la tarjeta? 🐷`,
+            `🤖 [ESTADO CRÍTICO]: A este paso, el Pokémon Z-A va a ser retro antes de que bajen de nivel. 🐽`,
+            `🤖 [ESTADO CRÍTICO]: ¿Siguen aquí? Su generosidad está bajo cero. 💅`
+          ];
+          msg = savageLevelQuotes[Math.floor(Math.random() * savageLevelQuotes.length)];
+        } 
+        else if (minsSinceDonation >= 60) {
+          const stingyQuotes = [
+            "🤖 [AVISO]: 60 minutos de silencio financiero. El chat parece un museo. 🖼️",
+            "🤖 [AVISO]: Suelten unos bits o una sub, que Luis no vive de puro aire. 🍱",
+            "🤖 [AVISO]: Mi corazón de cerdo dice que son MUY tacaños. ¡Muevan el precio! 🐽"
+          ];
+          msg = stingyQuotes[Math.floor(Math.random() * stingyQuotes.length)];
+        } 
+        else {
+          msg = `🤖 [SISTEMA]: ¡Subasta activa! Estamos en ${level.name} ($${p} MXN). 📉 DESCUENTOS: Sub T1 -$${level.rates?.sub || 0} | Prime -$${level.rates?.prime || 0} | 100 Bits -$${level.rates?.bits100 || 0} | 500 Bits -$${level.rates?.bits500 || 0} | 1000 Bits -$${level.rates?.bits1000 || 0}. 🚀`;
+        }
+          
+          clientRef.current.say(channelName, msg);
+        }
+      }, 20 * 60 * 1000); // 20 minutos
+
+    return () => {
+      clearInterval(announcementInterval);
+      if (clientRef.current) {
+        clientRef.current?.disconnect();
+        clientRef.current = null;
+        console.log("🛑 Pregonero detenido.");
+      }
+    };
+  }, [isLive, session, role]); // Se actualiza si el precio o nivel cambian
 
   const isFinalMode = currentLevel === 'MODO FINAL';
 
