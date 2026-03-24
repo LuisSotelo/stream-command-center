@@ -55,6 +55,10 @@ body {
     filter: drop-shadow(0 0 15px #EF4444) drop-shadow(0 0 30px #B91C1C);
   }
 
+  .shadow-glow-mandarina {
+    filter: drop-shadow(0 0 10px #FF5C00) drop-shadow(0 0 20px #FF5C00);
+  }
+
   /* Animaciones de Glitch Texto */
   .animate-glitch-1 {
     animation: glitch 500ms infinite;

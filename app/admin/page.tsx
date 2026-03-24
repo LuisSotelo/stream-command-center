@@ -892,7 +892,7 @@ function AdminContent() {
             {/* Glow optimizado para no romper el ancho en mobile */}
             <div className="absolute -inset-0 bg-gradient-to-r from-brand-purple to-brand-cyan opacity-10 group-hover:opacity-30 transition duration-1000 blur-sm rounded-xl"></div>
             
-            <div className="relative bg-[#0a0a0a] border border-brand-purple/40 p-4 md:p-6 rounded-xl shadow-[0_0_15px_rgba(168,85,247,0.1)]">
+            <div className="relative bg-[#0a0a0a] border border-brand-purple/40 p-4 md:p-6 rounded-xl shadow-glow-purple">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
                   <span className="relative flex h-2 w-2">
@@ -938,7 +938,7 @@ function AdminContent() {
           </div>
         </div>
 
-        <div className="bg-black/40 border border-brand-cyan/30 p-6 rounded-xl mt-8">
+        <div className="bg-black/40 border border-brand-cyan/30 p-6 rounded-xl mt-8 shadow-glow-cyan">
         <h2 className="text-sm text-brand-cyan font-black tracking-widest uppercase mb-6 italic">
           // PROTOCOLO_RETENCION_AUDIENCIA (Brainrot)
         </h2>
@@ -1007,17 +1007,17 @@ function AdminContent() {
       </div>
 
         {/* POKEMON TEAM CONTROL */}
-        <div className="mt-8 bg-black/40 border border-brand-cyan/20 p-6 rounded-xl shadow-[0_0_15px_rgba(0,245,255,0.05)]">
+        <div className="mt-8 bg-black/40 border border-brand-red/20 p-6 rounded-xl shadow-glow-red">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-brand-cyan rounded-full animate-pulse" />
-              <h2 className="text-[10px] text-brand-cyan tracking-widest uppercase font-black italic">
+              <div className="w-2 h-2 bg-brand-red rounded-full animate-pulse" />
+              <h2 className="text-[10px] text-brand-red tracking-widest uppercase font-black italic">
                 Current_Pokemon_Squad
               </h2>
             </div>
             <button 
               onClick={() => saveTeam(pokemonTeam)}
-              className="text-[9px] bg-brand-cyan/10 hover:bg-brand-cyan hover:text-black border border-brand-cyan px-4 py-1 rounded transition-all font-bold tracking-tighter"
+              className="text-[9px] bg-brand-red/10 hover:bg-brand-red hover:text-black border border-brand-red px-4 py-1 rounded transition-all font-bold tracking-tighter"
             >
               SINCRONIZAR_CON_JOAQUÍN
             </button>
@@ -1026,7 +1026,7 @@ function AdminContent() {
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             {pokemonTeam.map((poke, index) => (
               <div key={index} className="relative group">
-                <span className="absolute -top-2 -left-1 text-[7px] text-brand-cyan/40 font-mono z-10 bg-[#0a0a0a] px-1">
+                <span className="absolute -top-2 -left-1 text-[7px] text-brand-red/70 font-mono z-10 bg-[#0a0a0a] px-1">
                   SLOT_0{index + 1}
                 </span>
                 <input
@@ -1040,13 +1040,13 @@ function AdminContent() {
             ))}
           </div>
           
-          <p className="text-[7px] text-gray-600 mt-4 italic uppercase">
+          <p className="text-[7px] text-white-400 mt-4 italic uppercase">
             ℹ️ Al sincronizar, Joaquín actualizará su base de datos para el comando !equipo.
           </p>
         </div>
 
         {/* COMANDOS */}
-        <div className="bg-black/40 border border-brand-cyan/20 p-6 rounded-xl col-span-1 md:col-span-2">
+        <div className="bg-black/40 border border-brand-cyan/20 p-6 rounded-xl col-span-1 md:col-span-2 shadow-glow-purple">
           <h2 className="text-[10px] mb-4 text-brand-cyan tracking-widest uppercase italic opacity-80">
             // MOD_COMMAND_DATABASE
           </h2>
@@ -1082,12 +1082,12 @@ function AdminContent() {
         {/* OWNER & MARKETING */}
 
         {isOwner && (
-          <div className="bg-black/40 border border-orange-500/30 p-6 rounded-xl shadow-[0_0_20px_rgba(234,88,12,0.1)]">
+          <div className="bg-black/40 border border-orange-500/30 p-6 rounded-xl shadow-glow-mandarina">
             <h2 className="text-sm mb-4 text-orange-500 tracking-widest uppercase italic">
               DEPLOY_OR_RESET
             </h2>
 
-            <p className="text-[9px] text-gray-500 mb-4 font-mono">
+            <p className="text-[9px] text-gray-200 mb-4 font-mono">
               Current Final Price: ${currentPrice} MXN
             </p>
 
@@ -1099,7 +1099,7 @@ function AdminContent() {
                   location.reload();
                 }
               }}
-              className="mt-4 text-[8px] text-red-500/50 hover:text-red-500 uppercase"
+              className="mt-4 text-[8px] text-red-400/70 hover:text-red-500 uppercase"
             >
               [ hard_reset_database ]
             </button>
@@ -1111,15 +1111,15 @@ function AdminContent() {
               🚀 Launch Final Publication
             </button>
 
-            <h3 className="text-[10px] text-gray-500 tracking-widest uppercase mb-4">Admin_Activity_Log</h3>
+            <h3 className="text-[10px] text-gray-200 tracking-widest uppercase mb-4">Admin_Activity_Log</h3>
             <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
               {logs.map((log, i) => (
                 <div key={i} className="text-[9px] font-mono flex justify-between border-b border-white/5 pb-1">
-                  <span className={log.admin === "Sistema/Twitch" ? "text-brand-cyan" : "text-brand-purple"}>
+                  <span className={log.admin === "Sistema/Twitch" ? "text-brand-cyan" : "text-brand-emerald"}>
                     [{log.admin.toUpperCase()}]
                   </span>
-                  <span className="text-gray-400">{log.action} (-${log.amount})</span>
-                  <span className="text-[8px] text-gray-600">
+                  <span className="text-gray-200">{log.action} (-${log.amount})</span>
+                  <span className="text-[8px] text-gray-200">
                     {new Date(log.timestamp).toLocaleTimeString()}
                   </span>
                 </div>
@@ -1128,7 +1128,7 @@ function AdminContent() {
           </div>
         )}
 
-        <div className="bg-black/40 border border-brand-purple/30 p-6 rounded-xl backdrop-blur-md">
+        <div className="bg-black/40 border border-brand-purple/30 p-6 rounded-xl backdrop-blur-md shadow-glow-purple">
           <h2 className="text-sm mb-6 text-brand-cyan tracking-widest uppercase">
             Stream_Assets
           </h2>
