@@ -5,6 +5,7 @@ import { useState, useEffect, useRef } from "react";
 import { getCurrentLevel } from "@/lib/auction-logic";
 import * as tmi from "tmi.js";
 import { pusherClient } from "@/lib/pusher";
+import { useSearchParams } from "next/navigation";
 
 export default function AdminDashboard() {
   const { data: session, status } = useSession();
@@ -32,6 +33,8 @@ export default function AdminDashboard() {
   const lastLevelChangeTimeRef = useRef(Date.now());
   const lastLevelRef = useRef(level.name);
   const [joaquinMsg, setJoaquinMsg] = useState("");
+  const searchParams = useSearchParams();
+  const role = searchParams.get("role");
 
   // Sincronizamos los refs cada vez que cambian estas variables para que el bot siempre tenga la info actualizada
   useEffect(() => {
@@ -241,7 +244,7 @@ export default function AdminDashboard() {
         const statusMsg = `🤖 [ESTADO DEL SISTEMA]: 
           💰 Precio Actual: $${price} MXN | 
           📊 Fase: ${curr.name} | 
-          📉 DESCUENTOS: Sub -$${curr.rates.sub} | Prime -$${curr.rates.prime} | 100 Bits -$${curr.rates.bits100} | 1000 Bits -$${curr.rates.bits1000}. 
+          📉 DESCUENTOS: Sub -$${curr.rates.sub} | Prime -$${curr.rates.prime} | 100 Bits -$${curr.rates.bits100} | 500 Bits -$${curr.rates.bits500} | 1000 Bits -$${curr.rates.bits1000}. 
           ¡A darle, mortales! 🐷`;
 
         clientRef.current?.say(chName, statusMsg);
@@ -305,19 +308,26 @@ export default function AdminDashboard() {
   }, [cooldownRemaining > 0]);
 
   useEffect(() => {
-  // 1. REGLA DE ORO: Solo el Owner ejecuta el pregonero para evitar spam multimod
+  // --- NUEVA REGLA DE ORO MEJORADA ---
+  // Solo arranca si:
+  // 1. Eres el Owner (Email check)
+  // 2. La URL tiene el parámetro ?role=pregonero
+  // 3. El bot está Online y el Stream está Live
   const isOwner = session?.user?.email === process.env.NEXT_PUBLIC_OWNER_EMAIL;
-  if (!isOwner || botStatus !== "ONLINE" || !isLive) return;
+  const isPregoneroRole = role === "pregonero";
 
-  console.log("✅ Pregonero de Joaquín iniciado...");
+  if (!isOwner || !isPregoneroRole || botStatus !== "ONLINE" || !isLive) {
+    console.log("⏭️ Pregonero en modo silencioso (No es la instancia de OBS o falta sesión)");
+    return;
+  }
+
+  console.log("✅ [INSTANCIA MAESTRA]: Pregonero de Joaquín iniciado en OBS...");
 
   const announcementInterval = setInterval(() => {
-    // Verificación de seguridad interna
     if (clientRef.current && botStatus === "ONLINE") {
       const channelName = process.env.NEXT_PUBLIC_TWITCH_CHANNEL || "LuisHongo";
       const now = Date.now();
       
-      // Calculamos tiempos usando los REFS (que siempre tienen la info fresca)
       const minsSinceDonation = (now - lastDonationTimeRef.current) / 60000;
       const minsInLevel = (now - lastLevelChangeTimeRef.current) / 60000;
 
@@ -352,7 +362,7 @@ export default function AdminDashboard() {
     console.log("🛑 Pregonero detenido.");
     clearInterval(announcementInterval);
   };
-}, [botStatus, isLive, session]); // Se reinicia si el bot reconecta o cambia el estado del stream
+}, [botStatus, isLive, session, role]); // Añadimos 'role' a las dependencias
 
   const isOwner = session?.user?.email === process.env.NEXT_PUBLIC_OWNER_EMAIL || (session as any)?.user?.id === process.env.NEXT_PUBLIC_OWNER_ID;
 

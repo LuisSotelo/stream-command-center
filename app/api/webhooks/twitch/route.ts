@@ -3,20 +3,30 @@ import { verifyTwitchSignature } from "@/lib/twitch-verify";
 
 export async function POST(req: Request) {
   const body = await req.text();
+  const data = JSON.parse(body);
+  const messageType = req.headers.get("twitch-eventsub-message-type");
+
+  // 1. EL GUARDIÁN: Respondemos al Challenge inmediatamente
+  // Twitch necesita esto para activar el Webhook. No requiere firma.
+  if (messageType === "webhook_callback_verification") {
+    console.log("✅ Verificación de Webhook exitosa (Challenge recibido)");
+    return new Response(data.challenge, { 
+      status: 200, 
+      headers: { "Content-Type": "text/plain" } 
+    });
+  }
+
+  // 2. VALIDACIÓN DE SEGURIDAD (Solo para eventos reales como Subs/Bits)
   const signature = req.headers.get("twitch-eventsub-message-signature") || "";
   const messageId = req.headers.get("twitch-eventsub-message-id") || "";
   const timestamp = req.headers.get("twitch-eventsub-message-timestamp") || "";
 
   if (!verifyTwitchSignature(signature, messageId, timestamp, body)) {
+    console.error("❌ Firma inválida detectada. El evento fue rechazado.");
     return NextResponse.json({ error: "Invalid Signature" }, { status: 401 });
   }
 
-  const data = JSON.parse(body);
-
-  if (req.headers.get("twitch-eventsub-message-type") === "webhook_callback_verification") {
-    return new Response(data.challenge, { status: 200 });
-  }
-
+  // Si llegamos aquí, la firma es real y el mensaje viene de Twitch
   const eventType = data.subscription.type;
   const event = data.event;
   let userName = event.user_name || "Anónimo";
