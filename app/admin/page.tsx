@@ -90,6 +90,11 @@ function AdminContent() {
   const [pokeCooldown, setPokeCooldown] = useState(0);
   const lastPokeExecutionRef = useRef<number>(0);
 
+  //Refs para Brainrot
+  const [brainrotUrl, setBrainrotUrl] = useState("");
+  const [brainrotPlaylist, setBrainrotPlaylist] = useState<string[]>([]);
+  const [brainrotCooldown, setBrainrotCooldown] = useState(0);
+
   // Sincronizamos los refs cada vez que cambian estas variables para que el bot siempre tenga la info actualizada
   useEffect(() => {
     levelRef.current = level;
@@ -278,6 +283,16 @@ function AdminContent() {
       }
     });
 
+    gameChannel.bind("reset-brainrot-cooldown", () => {
+      setBrainrotCooldown(0); // Habilita el botón de nuevo
+      setErrorMessage("✅ VIDEO FINALIZADO: ESCÁNER LISTO");
+      setTimeout(() => setErrorMessage(null), 2000);
+    });
+
+    gameChannel.bind("playlist-updated", () => {
+      loadBrainrotData(); // Refresca la lista de videos desde Redis
+    });
+
     gameChannel.bind("progress-update", (data: any) => {
       if (data.progress !== undefined) {
         setProgress(data.progress);
@@ -413,6 +428,110 @@ function AdminContent() {
       return () => clearInterval(interval);
     }
   }, [status]);
+
+  // --- Brainrot Module ---
+
+  // 1. Carga inicial de datos de videos y cooldown
+  const loadBrainrotData = async () => {
+    try {
+      const [playlistRes, cooldownRes] = await Promise.all([
+        fetch("/api/brainrot"),
+        fetch("/api/brainrot/check-cooldown")
+      ]);
+      
+      const playlistData = await playlistRes.json();
+      const cooldownData = await cooldownRes.json();
+      
+      setBrainrotPlaylist(playlistData.playlist || []);
+      if (cooldownData.remaining > 0) setBrainrotCooldown(cooldownData.remaining);
+    } catch (error) {
+      console.error("Error cargando módulo Brainrot:", error);
+    }
+  };
+
+  useEffect(() => {
+    if (status === "authenticated") {
+      loadBrainrotData();
+    }
+  }, [status]);
+
+  // 2. Ticker unificado para el cooldown de Brainrot
+  useEffect(() => {
+    if (brainrotCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setBrainrotCooldown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [brainrotCooldown]);
+
+  // 3. Función para añadir video
+  const addVideoToPlaylist = async () => {
+    if (!brainrotUrl) return;
+
+    try {
+      // 1. LIMPIEZA INMEDIATA: Quitamos todo lo que esté después del signo '?'
+      // Ejemplo: "video.mp4?token=123" -> "video.mp4"
+      const urlSinParametros = brainrotUrl.trim().split('?')[0];
+
+      // 2. VALIDACIÓN: Ahora que está limpia, revisamos la extensión
+      const isValidVideo = urlSinParametros.toLowerCase().endsWith(".mp4") || 
+                           urlSinParametros.toLowerCase().endsWith(".webm");
+
+      if (!isValidVideo) {
+        setErrorMessage("❌ ERROR: EL ENLACE DEBE TERMINAR EN .MP4 o .WEBM");
+        setTimeout(() => setErrorMessage(null), 4000);
+        return;
+      }
+
+      // 3. ENVIAR A LA API: Mandamos la URL COMPLETA (con los tokens de Discord)
+      // Nota: Discord requiere esos tokens (?ex=...&hm=...) para dejarte ver el video. 
+      // Si se los quitamos, el OBS marcará error 403 (Prohibido).
+      const res = await fetch("/api/brainrot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ videoUrl: brainrotUrl.trim() }), 
+      });
+
+      if (res.ok) {
+        setBrainrotUrl("");
+        loadBrainrotData();
+        setErrorMessage("✅ VIDEO AÑADIDO (VALIDACIÓN EXITOSA)");
+        setTimeout(() => setErrorMessage(null), 2000);
+      }
+    } catch (e) {
+      setErrorMessage("❌ ERROR CRÍTICO AL PROCESAR URL");
+      setTimeout(() => setErrorMessage(null), 4000);
+    }
+  };
+
+  // 4. Función para lanzar video random
+  const triggerRandomVideo = async () => {
+    try {
+      const res = await fetch("/api/brainrot/trigger", { method: "POST" });
+      const data = await res.json();
+      
+      if (!res.ok) {
+        setErrorMessage(`⚠️ ${data.error}`);
+        setTimeout(() => setErrorMessage(null), 4000);
+        if (data.remaining) setBrainrotCooldown(data.remaining);
+      } else {
+        setErrorMessage(`🧠 VIDEO LANZADO: ${data.videoUrl.substring(0, 20)}...`);
+        setTimeout(() => setErrorMessage(null), 3000);
+        setBrainrotCooldown(180); // Cooldown de 3 min
+      }
+    } catch (e) {
+      setErrorMessage("❌ ERROR AL DISPARAR BRAINROT");
+    }
+  };
+
+  // 5. Borrar video
+  const deleteVideo = async (url: string) => {
+    await fetch("/api/brainrot/delete", {
+      method: "POST",
+      body: JSON.stringify({ videoUrl: url }),
+    });
+    loadBrainrotData();
+  };
 
   // --- CRONÓMETRO DE PRECISIÓN ---
   useEffect(() => {
@@ -819,6 +938,74 @@ function AdminContent() {
           </div>
         </div>
 
+        <div className="bg-black/40 border border-brand-cyan/30 p-6 rounded-xl mt-8">
+        <h2 className="text-sm text-brand-cyan font-black tracking-widest uppercase mb-6 italic">
+          // PROTOCOLO_RETENCION_AUDIENCIA (Brainrot)
+        </h2>
+        <div className="mb-6 p-4 bg-brand-cyan/5 border border-brand-cyan/20 rounded-lg">
+            <h3 className="text-[10px] text-brand-cyan font-black mb-3 uppercase tracking-widest">
+              🛠️ GUÍA_OPERATIVA_MODS:
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-[9px] font-mono leading-tight">
+              <div className="flex gap-2">
+                <span className="text-brand-cyan font-bold">#1</span>
+                <p className="text-gray-400">Sube el video (.mp4) a un canal de <span className="text-brand-purple font-bold">Discord</span>.</p>
+              </div>
+              <div className="flex gap-2">
+                <span className="text-brand-cyan font-bold">#2</span>
+                <p className="text-gray-400">Click derecho al video <span className="text-white">"Copiar enlace"</span>, pega y dale a <span className="text-brand-cyan italic">AÑADIR</span>.</p>
+              </div>
+              <div className="flex gap-2">
+                <span className="text-brand-cyan font-bold">#3</span>
+                <p className="text-gray-400">Cuando quieras trollear, dale al botón <span className="text-brand-cyan font-bold">LANZAR VIDEO RANDOM</span>.</p>
+              </div>
+            </div>
+            <p className="mt-3 text-[8px] text-orange-500/70 italic uppercase border-t border-orange-500/10 pt-2">
+              ⚠️ NOTA: El video se borra solo de la lista al terminar de reproducirse.
+            </p>
+          </div>
+        
+        <div className="flex gap-2 mb-4">
+          <input 
+            type="text" 
+            value={brainrotUrl}
+            onChange={(e) => setBrainrotUrl(e.target.value)}
+            placeholder="URL directa de video (.mp4)..."
+            className="flex-1 bg-black/60 border border-brand-cyan/20 rounded-lg px-3 py-2 text-xs font-mono text-brand-cyan placeholder:text-brand-cyan/30"
+          />
+          <button 
+            onClick={addVideoToPlaylist}
+            disabled={!brainrotUrl.toLowerCase().includes(".mp4") && !brainrotUrl.toLowerCase().includes(".webm")}
+            className="bg-brand-cyan/10 border border-brand-cyan text-brand-cyan text-[10px] px-4 py-2 rounded font-bold hover:bg-brand-cyan hover:text-black transition-all disabled:opacity-20 disabled:cursor-not-allowed"
+          >
+            AÑADIR
+          </button>
+        </div>
+        <div className="mt-4 space-y-2 max-h-40 overflow-y-auto pr-2">
+          {brainrotPlaylist.map((url, index) => (
+            <div key={index} className="flex items-center justify-between bg-white/5 p-2 rounded border border-white/10">
+              <span className="text-[10px] text-brand-cyan truncate flex-1 mr-2">{url}</span>
+              <button 
+                onClick={() => deleteVideo(url)}
+                className="text-red-400 hover:text-red-600 text-[10px] font-bold"
+              >
+                ELIMINAR
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <button 
+          disabled={brainrotCooldown > 0 || brainrotPlaylist.length === 0}
+          onClick={triggerRandomVideo}
+          className="w-full py-4 bg-brand-cyan/20 border-2 border-brand-cyan rounded-xl text-brand-cyan font-black text-lg shadow-glow-cyan hover:bg-brand-cyan hover:text-black transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          {brainrotCooldown > 0 
+            ? `RECARGANDO ESCÁNER (${Math.floor(brainrotCooldown/60)}m ${brainrotCooldown%60}s)` 
+            : `🚀 ¡LANZAR VIDEO RANDOM! (${brainrotPlaylist.length} disponibles)`}
+        </button>
+      </div>
+
         {/* POKEMON TEAM CONTROL */}
         <div className="mt-8 bg-black/40 border border-brand-cyan/20 p-6 rounded-xl shadow-[0_0_15px_rgba(0,245,255,0.05)]">
           <div className="flex items-center justify-between mb-6">
@@ -832,7 +1019,7 @@ function AdminContent() {
               onClick={() => saveTeam(pokemonTeam)}
               className="text-[9px] bg-brand-cyan/10 hover:bg-brand-cyan hover:text-black border border-brand-cyan px-4 py-1 rounded transition-all font-bold tracking-tighter"
             >
-              SYNC_TO_REDIS
+              SINCRONIZAR_CON_JOAQUÍN
             </button>
           </div>
 
