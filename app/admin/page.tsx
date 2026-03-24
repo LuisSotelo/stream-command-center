@@ -6,8 +6,9 @@ import { getCurrentLevel } from "@/lib/auction-logic";
 import * as tmi from "tmi.js";
 import { pusherClient } from "@/lib/pusher";
 import { useSearchParams } from "next/navigation";
+import { Suspense } from "react";
 
-export default function AdminDashboard() {
+function AdminContent() {
   const { data: session, status } = useSession();
   const [isLive, setIsLive] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -877,5 +878,18 @@ export default function AdminDashboard() {
         </div>
       </div>
     </main>
+  );
+}
+
+// El export default ahora será este:
+export default function AdminDashboard() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center text-brand-cyan font-mono italic">
+        INITIALIZING_SYSTEM_CONTEXT...
+      </div>
+    }>
+      <AdminContent />
+    </Suspense>
   );
 }
