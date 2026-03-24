@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, Suspense } from "react";
 import { pusherClient } from "@/lib/pusher";
 import { AnimatedPrice } from "../../components/AnimatedPrice";
 import { AnimatePresence, motion } from "framer-motion";
@@ -8,7 +8,7 @@ import * as tmi from "tmi.js";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 
-export default function ObsPriceOverlay() {
+function PriceOverlayContent() {
   const [price, setPrice] = useState<number | null>(null);
   const [isVisible, setIsVisible] = useState(false);
   const [currentLevel, setCurrentLevel] = useState("BASE");
@@ -376,5 +376,13 @@ export default function ObsPriceOverlay() {
         )}
       </AnimatePresence>
     </main>
+  );
+}
+
+export default function ObsPriceOverlay() {
+  return (
+    <Suspense fallback={null}> 
+      <PriceOverlayContent />
+    </Suspense>
   );
 }
