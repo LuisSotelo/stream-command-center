@@ -37,6 +37,57 @@ function AdminContent() {
   const searchParams = useSearchParams();
   const role = searchParams.get("role");
 
+  // Ref para pokeapi
+  const [pokemonTeam, setPokemonTeam] = useState(["", "", "", "", "", ""]);
+  const saveTeam = async (newTeam: string[]) => {
+    setLoading(true); // Feedback visual
+    try {
+      // 1. Obtenemos los sprites de PokeAPI antes de guardar
+      const teamWithSprites = await Promise.all(
+        newTeam.map(async (name) => {
+          const cleanName = name.trim().toLowerCase();
+          if (!cleanName || cleanName === "vacío") {
+            return { name: "Vacío", sprite: "" };
+          }
+
+          try {
+            const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${cleanName}`);
+            if (!res.ok) return { name, sprite: "" };
+            const data = await res.json();
+
+            // ESTA ES LA RUTA PARA EL GIF ANIMADO:
+            const animatedSprite = data.sprites.versions["generation-v"]["black-white"].animated.front_default;
+            
+            // Fallback por si ese Pokémon no tiene GIF (algunos muy nuevos no tienen)
+            const finalSprite = animatedSprite || data.sprites.front_default;
+
+            return { name, sprite: finalSprite };
+          } catch {
+            return { name, sprite: "" };
+          }
+        })
+      );
+
+      // 2. Enviamos el objeto enriquecido a nuestra API
+      await fetch("/api/pokemon/team", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          team: teamWithSprites, // Ahora enviamos [{name, sprite}, ...]
+          user: session?.user?.name || "Admin" 
+        }),
+      });
+
+      setErrorMessage("✅ EQUIPO SINCRONIZADO Y SPRITES CACHEADOS");
+      setTimeout(() => setErrorMessage(null), 3000);
+    } catch (error) {
+      console.error("Error al guardar el equipo:", error);
+      setErrorMessage("❌ ERROR AL GUARDAR");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Sincronizamos los refs cada vez que cambian estas variables para que el bot siempre tenga la info actualizada
   useEffect(() => {
     levelRef.current = level;
@@ -53,12 +104,13 @@ function AdminContent() {
     // --- 1. FUNCIÓN DE CARGA DE DATOS (Centralizada) ---
     const fetchData = async () => {
       try {
-        const [logsRes, statusRes, priceRes, progRes, mlRes] = await Promise.all([
+        const [logsRes, statusRes, priceRes, progRes, mlRes, teamRes] = await Promise.all([
           fetch("/api/admin/logs"),
           fetch("/api/twitch/status"),
           fetch("/api/price"),
           fetch("/api/game-progress"),
           fetch("/api/ml/status"),
+          fetch("/api/pokemon/team"),
         ]);
 
         const logsData = logsRes.ok ? await logsRes.json() : { success: false, logs: [] };
@@ -66,6 +118,17 @@ function AdminContent() {
         const priceData = priceRes.ok ? await priceRes.json() : {};
         const progData = progRes.ok ? await progRes.json() : { success: false, progress: 0 };
         const mlData = mlRes.ok ? await mlRes.json() : { status: "OFFLINE" };
+        const teamData = teamRes.ok ? await teamRes.json() : null;
+
+        // Verifica que teamData y teamData.team existan antes de setear
+        if (teamData && teamData.team) {
+          // Extraemos solo los nombres para los inputs del Admin
+          const namesOnly = teamData.team.map((p: any) => typeof p === 'string' ? p : p.name);
+          setPokemonTeam(namesOnly);
+        } else {
+          // Estado inicial por si Redis está vacío
+          setPokemonTeam(["Vacío", "Vacío", "Vacío", "Vacío", "Vacío", "Vacío"]);
+        }
 
         if (logsData.success) setLogs(logsData.logs);
         setIsLive(statusData.isLive);
@@ -273,6 +336,25 @@ function AdminContent() {
         ];
         clientRef.current?.say(chName, `🤖 ${wisdom[Math.floor(Math.random()*wisdom.length)]} 🐷`);
       }
+
+      if (command === '!equipo') {
+        const res = await fetch("/api/pokemon/team");
+        const data = await res.json();
+        const teamArray = data.team || [];
+
+        const teamString = teamArray
+          .filter((p: any) => p.name && p.name !== "Vacío")
+          .map((p: any) => p.name)
+          .join(", ");
+        
+        fetch("/api/pokemon/show-team", { method: "POST" });
+
+        const finalMsg = teamString 
+          ? `🤖 [SISTEMA]: Escaneando señales... Equipo de Luis: ${teamString} 🐽`
+          : `🤖 [SISTEMA]: ¡Sin datos en el escáner! Luis está jugando solo. 🐽`;
+
+        clientRef.current?.say(chName, finalMsg);
+      }
     });
 
     return () => {
@@ -422,6 +504,12 @@ function AdminContent() {
       </div>
     );
   }
+
+  const handleTeamMemberChange = (index: number, value: string) => {
+    const newTeam = [...pokemonTeam];
+    newTeam[index] = value;
+    setPokemonTeam(newTeam);
+  };
 
   return (
     <main className="min-h-screen bg-[#0a0a0a] text-white p-8 font-mono">
@@ -706,6 +794,45 @@ function AdminContent() {
           </div>
         </div>
 
+        {/* POKEMON TEAM CONTROL */}
+        <div className="mt-8 bg-black/40 border border-brand-cyan/20 p-6 rounded-xl shadow-[0_0_15px_rgba(0,245,255,0.05)]">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-brand-cyan rounded-full animate-pulse" />
+              <h2 className="text-[10px] text-brand-cyan tracking-widest uppercase font-black italic">
+                Current_Pokemon_Squad
+              </h2>
+            </div>
+            <button 
+              onClick={() => saveTeam(pokemonTeam)}
+              className="text-[9px] bg-brand-cyan/10 hover:bg-brand-cyan hover:text-black border border-brand-cyan px-4 py-1 rounded transition-all font-bold tracking-tighter"
+            >
+              SYNC_TO_REDIS
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            {pokemonTeam.map((poke, index) => (
+              <div key={index} className="relative group">
+                <span className="absolute -top-2 -left-1 text-[7px] text-brand-cyan/40 font-mono z-10 bg-[#0a0a0a] px-1">
+                  SLOT_0{index + 1}
+                </span>
+                <input
+                  type="text"
+                  value={poke === "Vacío" ? "" : poke}
+                  placeholder="---"
+                  onChange={(e) => handleTeamMemberChange(index, e.target.value)}
+                  className="w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-[11px] text-white focus:outline-none focus:border-brand-cyan transition-all font-mono placeholder:text-white/5"
+                />
+              </div>
+            ))}
+          </div>
+          
+          <p className="text-[7px] text-gray-600 mt-4 italic uppercase">
+            ℹ️ Al sincronizar, Joaquín actualizará su base de datos para el comando !equipo.
+          </p>
+        </div>
+
         {/* COMANDOS */}
         <div className="bg-black/40 border border-brand-cyan/20 p-6 rounded-xl col-span-1 md:col-span-2">
           <h2 className="text-[10px] mb-4 text-brand-cyan tracking-widest uppercase italic opacity-80">
@@ -731,6 +858,11 @@ function AdminContent() {
             <div className="border border-white/5 p-3 rounded bg-white/5">
               <code className="text-brand-purple text-xs font-bold">!joaquin</code>
               <p className="text-[9px] text-gray-400 mt-1">Invoca la sabiduría cínica y pasivo-agresiva de la deidad porcina.</p>
+            </div>
+
+            <div className="border border-white/5 p-3 rounded bg-white/5">
+              <code className="text-brand-purple text-xs font-bold">!equipo</code>
+              <p className="text-[9px] text-gray-400 mt-1">Muestra el equipo de Pokémon actuales.</p>
             </div>
           </div>
         </div>
