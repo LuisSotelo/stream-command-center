@@ -87,6 +87,8 @@ function AdminContent() {
       setLoading(false);
     }
   };
+  const [pokeCooldown, setPokeCooldown] = useState(0);
+  const lastPokeExecutionRef = useRef<number>(0);
 
   // Sincronizamos los refs cada vez que cambian estas variables para que el bot siempre tenga la info actualizada
   useEffect(() => {
@@ -338,22 +340,45 @@ function AdminContent() {
       }
 
       if (command === '!equipo') {
-        const res = await fetch("/api/pokemon/team");
-        const data = await res.json();
-        const teamArray = data.team || [];
+        const now = Date.now();
+        const cooldownMs = 5 * 60 * 1000; // 5 minutos en milisegundos
+        const timeElapsed = now - lastPokeExecutionRef.current;
 
-        const teamString = teamArray
-          .filter((p: any) => p.name && p.name !== "Vacío")
-          .map((p: any) => p.name)
-          .join(", ");
-        
-        fetch("/api/pokemon/show-team", { method: "POST" });
+        if (timeElapsed < cooldownMs) {
+          // CALCULAR TIEMPO RESTANTE
+          const remainingSeconds = Math.ceil((cooldownMs - timeElapsed) / 1000);
+          const mins = Math.floor(remainingSeconds / 60);
+          const secs = remainingSeconds % 60;
 
-        const finalMsg = teamString 
-          ? `🤖 [SISTEMA]: Escaneando señales... Equipo de Luis: ${teamString} 🐽`
-          : `🤖 [SISTEMA]: ¡Sin datos en el escáner! Luis está jugando solo. 🐽`;
+          clientRef.current?.say(
+            chName, 
+            `🤖 [ENFRIAMIENTO]: ¡Cálmense, mortales! El escáner de la Pokédex se está recargando. Esperen ${mins}m ${secs}s. 🐽`
+          );
+          return; // Detenemos la ejecución aquí
+        }
 
-        clientRef.current?.say(chName, finalMsg);
+        // SI PASÓ EL COOLDOWN, EJECUTAMOS:
+        try {
+          const res = await fetch("/api/pokemon/team");
+          const data = await res.json();
+          const teamArray = data.team || [];
+
+          const teamString = teamArray
+            .filter((p: any) => p.name && p.name !== "Vacío")
+            .map((p: any) => p.name)
+            .join(", ");
+          
+          fetch("/api/pokemon/show-team", { method: "POST" });
+
+          const finalMsg = teamString 
+            ? `🤖 [SISTEMA]: Escaneando señales... Equipo de Luis: ${teamString} 🐽`
+            : `🤖 [SISTEMA]: ¡Sin datos en el escáner! Luis está jugando solo. 🐽`;
+
+          clientRef.current?.say(chName, finalMsg);
+        }
+        catch (err) {
+          console.error("Error en comando equipo:", err);
+        }
       }
     });
 
