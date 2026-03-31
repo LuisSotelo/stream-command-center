@@ -15,47 +15,54 @@ export const pusherServer = new Pusher({
 export async function POST(req: Request) {
   try {
     const session = await getServerSession(authOptions);
+
     if (!session) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { message, admin } = await req.json();
+    const body = await req.json();
+    const rawMessage = body.message;
+    const admin = body.admin;
 
-    if (!message || message.trim() === "") {
+    if (typeof rawMessage !== "string" || rawMessage.trim() === "") {
       return NextResponse.json({ error: "Message is empty" }, { status: 400 });
     }
 
-    const cleanMessage = message.trim();
+    const cleanMessage = rawMessage.trim();
     const adminName = admin || session.user?.name || "Unknown Mod";
+    const nowIso = new Date().toISOString();
+
     const logEntry = {
-    admin: adminName,
-    action: `JOAQUIN_SAYS: ${cleanMessage}`,
-    timestamp: new Date().toISOString(),
+      admin: adminName,
+      action: `JOAQUIN_SAYS: ${cleanMessage}`,
+      timestamp: nowIso,
     };
 
-    // 1. Disparar a Twitch vía Pusher
+    // 1. Disparar el mensaje para que AdminPage lo traduzca a Twitch vía TMI
     await pusherServer.trigger("auction-channel", "joaquin-says", {
       message: cleanMessage,
       admin: adminName,
-      timestamp: new Date().toISOString(),
+      timestamp: nowIso,
     });
 
-    // 2. REGISTRAR EN LOGS (Para que aparezca en el Dashboard)
-    // Esto hace que la acción de "Hacer hablar a Joaquín" aparezca en tu historial de actividad
+    // 2. Reflejarlo de inmediato en el dashboard
     await pusherServer.trigger("auction-channel", "admin-log-update", {
       admin: adminName,
       action: `JOAQUIN_SAYS: "${cleanMessage.substring(0, 20)}..."`,
-      amount: 0, // No descuenta dinero, pero es una acción de admin
-      timestamp: new Date().toISOString(),
+      amount: 0,
+      timestamp: nowIso,
     });
 
-    // 3. (Opcional) Guardar en DB persistente si la tienes configurada
+    // 3. Persistir log
     await redis.lpush("admin_logs", JSON.stringify(logEntry));
     await redis.ltrim("admin_logs", 0, 9);
 
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Error en joaquin-speak API:", error);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal Server Error" },
+      { status: 500 },
+    );
   }
 }
