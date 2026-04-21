@@ -1,50 +1,46 @@
 import { NextResponse } from "next/server";
 
+async function getAppToken(clientId: string, clientSecret: string) {
+  const res = await fetch("https://id.twitch.tv/oauth2/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      grant_type: "client_credentials",
+    }),
+    cache: "no-store",
+  });
+
+  const data = await res.json();
+
+  if (!res.ok || !data.access_token) {
+    throw new Error("Error getting Twitch token");
+  }
+
+  return data.access_token as string;
+}
+
 export async function GET() {
   const clientId = process.env.TWITCH_CLIENT_ID;
   const clientSecret = process.env.TWITCH_CLIENT_SECRET;
-  const channelName = process.env.TWITCH_CHANNEL || process.env.NEXT_PUBLIC_TWITCH_CHANNEL || "LuisHongo";
+  const channelName =
+    process.env.TWITCH_CHANNEL ||
+    process.env.NEXT_PUBLIC_TWITCH_CHANNEL ||
+    "LuisHongo";
 
   if (!clientId || !clientSecret || !channelName) {
     return NextResponse.json(
-      { isLive: false, connection: "OFFLINE", error: "Missing config" },
+      { connection: "OFFLINE", error: "Missing config" },
       { status: 500 }
     );
   }
 
   try {
-    // 1. Obtener App Access Token
-    const authResponse = await fetch(
-      `https://id.twitch.tv/oauth2/token?client_id=${clientId}&client_secret=${clientSecret}&grant_type=client_credentials`,
-      {
-        method: "POST",
-        cache: "no-store",
-      }
-    );
+    const token = await getAppToken(clientId, clientSecret);
 
-    if (!authResponse.ok) {
-      const authError = await authResponse.text();
-      console.error("Twitch auth error:", authError);
-
-      return NextResponse.json(
-        { isLive: false, connection: "ERROR_AUTH" },
-        { status: 200 }
-      );
-    }
-
-    const authData = await authResponse.json();
-    const token = authData.access_token;
-
-    if (!token) {
-      console.error("Twitch auth returned no access_token");
-      return NextResponse.json(
-        { isLive: false, connection: "ERROR_AUTH" },
-        { status: 200 }
-      );
-    }
-
-    // 2. Consultar si el canal está LIVE
-    const streamResponse = await fetch(
+    // 🔹 1. LIVE STATUS
+    const streamRes = await fetch(
       `https://api.twitch.tv/helix/streams?user_login=${encodeURIComponent(channelName)}`,
       {
         headers: {
@@ -55,30 +51,48 @@ export async function GET() {
       }
     );
 
-    if (!streamResponse.ok) {
-      const streamError = await streamResponse.text();
-      console.error("Twitch stream status error:", streamError);
-
-      return NextResponse.json(
-        { isLive: false, connection: "ERROR_API" },
-        { status: 200 }
-      );
-    }
-
-    const streamData = await streamResponse.json();
+    const streamData = await streamRes.json();
     const isLive = Array.isArray(streamData.data) && streamData.data.length > 0;
 
+    // 🔹 2. EVENTSUB STATUS
+    const eventSubRes = await fetch(
+      "https://api.twitch.tv/helix/eventsub/subscriptions",
+      {
+        headers: {
+          "Client-ID": clientId,
+          Authorization: `Bearer ${token}`,
+        },
+        cache: "no-store",
+      }
+    );
+
+    const eventSubData = await eventSubRes.json();
+
+    const subs = eventSubData.data || [];
+
+    const enabled = subs.filter((s: any) => s.status === "enabled");
+    const pending = subs.filter((s: any) =>
+      s.status.includes("pending")
+    );
+
     return NextResponse.json({
-      isLive,
       connection: "CONNECTED",
+      isLive,
+
+      eventsub: {
+        total: subs.length,
+        enabled: enabled.length,
+        pending: pending.length,
+        ok: enabled.length > 0,
+      },
     });
   } catch (error) {
     console.error("Twitch Status Error:", error);
 
     return NextResponse.json(
       {
-        isLive: false,
         connection: "OFFLINE",
+        isLive: false,
       },
       { status: 200 }
     );
