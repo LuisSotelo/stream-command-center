@@ -111,6 +111,11 @@ export async function POST(req: Request) {
         break;
       }
 
+      case "FOLLOW":{
+        discount = 0.01; // El glorioso centavo
+        break;
+      }
+
       default:
         discount = 0;
         break;

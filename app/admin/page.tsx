@@ -233,8 +233,19 @@ function AdminContent() {
         announcementIntervalRef.current = null;
       }
 
+      // 1. Mensaje de bienvenida INMEDIATO al conectar
+      setTimeout(() => {
+        if (clientRef.current && isLiveRef.current) {
+          const ch = process.env.NEXT_PUBLIC_TWITCH_CHANNEL || "LuisHongo";
+          clientRef.current.say(ch, `🤖 [SISTEMA]: Protocolo de Subasta Inversa v5.0 ONLINE. Precio: $${currentPriceRef.current} MXN. ¡A darle! 🐷`);
+        }
+      }, 5000); // Esperamos 5 seg a que termine de conectar bien
+
       announcementIntervalRef.current = setInterval(() => {
-        if (!clientRef.current || !isLiveRef.current) return;
+        // IMPORTANTE: Aquí leemos clientRef.current JUSTO en el momento del envío
+        const activeClient = clientRef.current;
+        
+        if (!activeClient || !isLiveRef.current) return;
 
         const channelName = process.env.NEXT_PUBLIC_TWITCH_CHANNEL || "LuisHongo";
         const currentLevel = levelRef.current;
@@ -264,8 +275,8 @@ function AdminContent() {
           msg = `🤖 [SISTEMA]: ¡Subasta activa! Estamos en ${currentLevel.name} ($${price} MXN). 📉 DESCUENTOS: Sub T1 -$${currentLevel.rates.sub} | Prime -$${currentLevel.rates.prime} | 100 Bits -$${currentLevel.rates.bits100} | 500 Bits -$${currentLevel.rates.bits500} | 1000 Bits -$${currentLevel.rates.bits1000}. 🚀`;
         }
 
-        clientRef.current?.say(channelName, msg);
-      }, 20 * 60 * 1000);
+        activeClient.say(channelName, msg);
+      }, 12 * 60 * 1000); // 12 minutos exactos
     };
 
     if (process.env.NEXT_PUBLIC_TWITCH_BOT_OAUTH) {
@@ -950,7 +961,7 @@ function AdminContent() {
           </div>
 
           <div className="mt-8 relative group max-w-full">
-            <div className="absolute -inset-0 bg-gradient-to-r from-brand-purple to-brand-cyan opacity-10 group-hover:opacity-30 transition duration-1000 blur-sm rounded-xl"></div>
+            <div className="absolute inset-0 bg-linear-to-r from-brand-purple to-brand-cyan opacity-10 group-hover:opacity-30 transition duration-1000 blur-sm rounded-xl"></div>
 
             <div className="relative bg-[#0a0a0a] border border-brand-purple/40 p-4 md:p-6 rounded-xl shadow-glow-purple">
               <div className="flex items-center justify-between mb-4">

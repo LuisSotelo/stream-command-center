@@ -64,7 +64,7 @@ export default function ObsProgressOverlay() {
                 <motion.div 
                   animate={{ x: ["-100%", "100%"] }}
                   transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                  className="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-transparent"
+                  className="absolute inset-0 bg-linear-to-r from-transparent via-white/50 to-transparent"
                 />
               </motion.div>
             </div>

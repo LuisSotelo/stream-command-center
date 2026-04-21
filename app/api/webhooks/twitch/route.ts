@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { verifyTwitchSignature } from "@/lib/twitch-verify";
+import { redis } from "@/lib/redis";
 
 export async function POST(req: Request) {
   const body = await req.text();
@@ -109,6 +110,32 @@ export async function POST(req: Request) {
 
       if (!res.ok) {
         console.error("❌ Error procesando BITS en /api/price");
+      }
+    }
+    // 4. NUEVOS FOLLOWS (Con sistema Anti-Abuso)
+    else if (eventType === "channel.follow") {
+      const userId = event.user_id;
+
+      // 1. Preguntamos a Redis si este usuario ya dio follow antes
+      const alreadyFollowed = await redis.get(`has_followed_${userId}`);
+
+      if (!alreadyFollowed) {
+        console.log(`🔔 [WEBHOOK] Follow REAL de ${userName}. Registrando y aplicando descuento.`);
+        
+        // 2. Lo guardamos en Redis permanentemente (o ponle un {ex: ...} si quieres que expire en meses)
+        await redis.set(`has_followed_${userId}`, "true");
+
+        // 3. Mandamos a cobrar el descuento
+        await fetch(`${process.env.NEXTAUTH_URL}/api/price`, {
+          method: "POST",
+          headers: { 
+            "Content-Type": "application/json",
+            "x-twitch-secret": process.env.TWITCH_WEBHOOK_SECRET! 
+          },
+          body: JSON.stringify({ type: "FOLLOW", user: userName }),
+        });
+      } else {
+        console.log(`🚫 [WEBHOOK] Follow repetido/troll de ${userName} ignorado.`);
       }
     }
   } catch (error) {

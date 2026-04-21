@@ -332,7 +332,7 @@ function PriceOverlayContent() {
             initial={{ y: 100, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: -100, opacity: 0 }}
-            className="fixed bottom-20 bg-red-600 text-white px-8 py-2 font-black italic tracking-tighter skew-x-[-12deg] shadow-[10px_10px_0_0_#000]"
+            className="fixed bottom-20 bg-red-600 text-white px-8 py-2 font-black italic tracking-tighter -skew-x-12 shadow-[10px_10px_0_0_#000]"
           >
             ¡{triggerEvent.toUpperCase()} ACTIVADO!
           </motion.div>
