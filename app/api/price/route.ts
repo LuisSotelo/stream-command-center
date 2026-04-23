@@ -113,7 +113,7 @@ export async function POST(req: Request) {
       }
 
       case "FOLLOW":{
-        discount = 0.01; // El glorioso centavo
+        discount = 1; // El glorioso peso
         break;
       }
 
