@@ -165,11 +165,11 @@ Todos los eventos deben estar en:
 
 ```mermaid
 graph LR
-    A[Twitch Event] --> B[/api/webhooks/twitch]
-    B --> C[/api/price]
-    C --> D[Redis]
-    C --> E[Pusher]
-    E --> F[OBS / UI]
+    A["Twitch Event"] --> B["/api/webhooks/twitch"]
+    B --> C["/api/price"]
+    C --> D["Redis"]
+    C --> E["Pusher"]
+    E --> F["OBS / UI"]
 ```
 
 ---
