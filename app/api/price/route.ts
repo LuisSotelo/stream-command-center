@@ -46,6 +46,7 @@ export async function POST(req: Request) {
   const twitchToken = req.headers.get("x-twitch-secret");
 
   const isOwner = userId === process.env.AUTHORIZED_TWITCH_ID;
+  const isWebhook = twitchToken === process.env.TWITCH_WEBHOOK_SECRET;
   const isLive = process.env.NEXT_PUBLIC_STREAM_ACTIVE === "true";
   const minPrice = Number(process.env.NEXT_PUBLIC_MIN_PRICE) || 0;
 
@@ -53,7 +54,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (!isLive && !isOwner) {
+  if (!isLive && !isOwner && !isWebhook) {
     return NextResponse.json({ error: "Subasta inactiva." }, { status: 403 });
   }
 

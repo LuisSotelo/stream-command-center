@@ -26,6 +26,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid Signature" }, { status: 401 });
   }
 
+  const alreadyProcessed = await redis.get(`twitch_msg_${messageId}`);
+
+  if (alreadyProcessed) {
+    console.log(`♻️ Evento duplicado ignorado: ${messageId}`);
+    return NextResponse.json({ received: true, duplicate: true });
+  }
+
+  await redis.set(`twitch_msg_${messageId}`, "1", { ex: 60 * 60 });
+
   const eventType = data.subscription?.type;
   const event = data.event ?? {};
   const userName = event.user_name || "Anónimo";
@@ -52,6 +61,11 @@ export async function POST(req: Request) {
         }),
       });
 
+      const priceResponseText = await res.text();
+
+      console.log("💸 /api/price status:", res.status);
+      console.log("💸 /api/price response:", priceResponseText);
+
       if (!res.ok) {
         console.error("❌ Error procesando GIFT_BOMB en /api/price");
       }
@@ -66,7 +80,28 @@ export async function POST(req: Request) {
         return NextResponse.json({ received: true });
       }
 
-      const subType = event.is_prime ? "PRIME" : "SUB";
+      const isGift = Boolean(event.is_gift);
+      const isPrime = event.is_prime === true;
+      const tier = event?.tier;
+
+      if (isGift) {
+        return NextResponse.json({ received: true });
+      }
+
+      let subType: "SUB" | "PRIME" | "SUB_TIER2" | "SUB_TIER3" = "SUB";
+
+      // Tier 2 y Tier 3 sí son distinguibles con claridad
+      if (tier === "2000") {
+        subType = "SUB_TIER2";
+      } else if (tier === "3000") {
+        subType = "SUB_TIER3";
+      } else if (isPrime) {
+        // Tier 1000 con marca explícita de Prime
+        subType = "PRIME";
+      } else {
+        // Tier 1000 pagada normal, o Prime/resub sin is_prime expuesto
+        subType = "SUB";
+      }
 
       const res = await fetch(`${process.env.NEXTAUTH_URL}/api/price`, {
         method: "POST",
@@ -79,6 +114,11 @@ export async function POST(req: Request) {
           user: userName,
         }),
       });
+
+      const priceResponseText = await res.text();
+
+      console.log("💸 /api/price status:", res.status);
+      console.log("💸 /api/price response:", priceResponseText);
 
       if (!res.ok) {
         console.error(`❌ Error procesando ${subType} en /api/price`);
@@ -108,6 +148,11 @@ export async function POST(req: Request) {
         }),
       });
 
+      const priceResponseText = await res.text();
+
+      console.log("💸 /api/price status:", res.status);
+      console.log("💸 /api/price response:", priceResponseText);
+
       if (!res.ok) {
         console.error("❌ Error procesando BITS en /api/price");
       }
@@ -126,7 +171,7 @@ export async function POST(req: Request) {
         await redis.set(`has_followed_${userId}`, "true");
 
         // 3. Mandamos a cobrar el descuento
-        await fetch(`${process.env.NEXTAUTH_URL}/api/price`, {
+        const res = await fetch(`${process.env.NEXTAUTH_URL}/api/price`, {
           method: "POST",
           headers: { 
             "Content-Type": "application/json",
@@ -134,6 +179,11 @@ export async function POST(req: Request) {
           },
           body: JSON.stringify({ type: "FOLLOW", user: userName }),
         });
+
+        const priceResponseText = await res.text();
+
+        console.log("💸 /api/price status:", res.status);
+        console.log("💸 /api/price response:", priceResponseText);
       } else {
         console.log(`🚫 [WEBHOOK] Follow repetido/troll de ${userName} ignorado.`);
       }
