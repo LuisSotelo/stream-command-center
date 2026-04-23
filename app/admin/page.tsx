@@ -227,24 +227,26 @@ function AdminContent() {
       channels: [process.env.NEXT_PUBLIC_TWITCH_CHANNEL || "LuisHongo"],
     });
 
+    const client = clientRef.current;
+
     const startPregonero = () => {
       if (announcementIntervalRef.current) {
         clearInterval(announcementIntervalRef.current);
         announcementIntervalRef.current = null;
       }
 
-      // 1. Mensaje de bienvenida INMEDIATO al conectar
       setTimeout(() => {
         if (clientRef.current && isLiveRef.current) {
           const ch = process.env.NEXT_PUBLIC_TWITCH_CHANNEL || "LuisHongo";
-          clientRef.current.say(ch, `🤖 [SISTEMA]: Protocolo de Subasta Inversa v5.0 ONLINE. Precio: $${currentPriceRef.current} MXN. ¡A darle! 🐷`);
+          clientRef.current.say(
+            ch,
+            `🤖 [SISTEMA]: Protocolo de Subasta Inversa v5.0 ONLINE. Precio: $${currentPriceRef.current} MXN. ¡A darle! 🐷`
+          );
         }
-      }, 5000); // Esperamos 5 seg a que termine de conectar bien
+      }, 5000);
 
       announcementIntervalRef.current = setInterval(() => {
-        // IMPORTANTE: Aquí leemos clientRef.current JUSTO en el momento del envío
         const activeClient = clientRef.current;
-        
         if (!activeClient || !isLiveRef.current) return;
 
         const channelName = process.env.NEXT_PUBLIC_TWITCH_CHANNEL || "LuisHongo";
@@ -276,11 +278,11 @@ function AdminContent() {
         }
 
         activeClient.say(channelName, msg);
-      }, 12 * 60 * 1000); // 12 minutos exactos
+      }, 12 * 60 * 1000);
     };
 
     if (process.env.NEXT_PUBLIC_TWITCH_BOT_OAUTH) {
-      clientRef.current
+      client
         .connect()
         .then(() => {
           setBotStatus("ONLINE");
@@ -295,16 +297,16 @@ function AdminContent() {
       setBotStatus("OFFLINE");
     }
 
-    clientRef.current.on("reconnect", () => {
+    client.on("reconnect", () => {
       setBotStatus("RECONNECTING");
       console.log("🔄 Joaquín está intentando reconectar...");
     });
 
-    clientRef.current.on("connected", () => {
+    client.on("connected", () => {
       setBotStatus("ONLINE");
     });
 
-    clientRef.current.on("disconnected", (reason) => {
+    client.on("disconnected", (reason) => {
       setBotStatus("OFFLINE");
       console.warn("⚠️ Joaquín desconectado:", reason);
     });
@@ -333,7 +335,7 @@ function AdminContent() {
     channel.bind("joaquin-troll", (data: any) => {
       clientRef.current?.say(
         process.env.NEXT_PUBLIC_TWITCH_CHANNEL || "LuisHongo",
-        `🤖 ${data.message} 🐷`,
+        `🤖 ${data.message} 🐷`
       );
     });
 
@@ -362,7 +364,7 @@ function AdminContent() {
 
           clientRef.current?.say(
             channelName,
-            `🏆 ¡PRECIO FINAL: $${data.finalPrice} MXN! COMPRA AQUÍ: ${data.mlLink}`,
+            `🏆 ¡PRECIO FINAL: $${data.finalPrice} MXN! COMPRA AQUÍ: ${data.mlLink}`
           );
         }
       }, 1000);
@@ -400,44 +402,49 @@ function AdminContent() {
       setTimeout(() => setErrorMessage(null), 3000);
     });
 
-    clientRef.current.on("message", async (_chan, _tags, message, self) => {
+    const handleMessage = async (
+      _chan: string,
+      _tags: any,
+      message: string,
+      self: boolean
+    ) => {
       if (self || !message.startsWith("!")) return;
 
       const command = message.toLowerCase().trim();
-      const chName = process.env.NEXT_PUBLIC_TWITCH_CHANNEL || "LuisHongo";
 
       if (command === "!precio") {
-        const res = await fetch("/api/price");
+        const res = await fetch("/api/price", { cache: "no-store" });
         const data = await res.json();
-        clientRef.current?.say(
-          chName,
-          `🤖 El precio actual es $${data.newPrice || currentPriceRef.current} MXN. ¡Bajen eso mortales! 🐷`,
+
+        client.say(
+          _chan,
+          `🤖 El precio actual es $${data.newPrice || currentPriceRef.current} MXN. ¡Bajen eso mortales! 🐷`
         );
+        return;
       }
 
       if (command === "!top") {
-        const res = await fetch("/api/auction/top");
+        const res = await fetch("/api/auction/top", { cache: "no-store" });
         const data = await res.json();
         const mvp = data.top?.[0];
-        clientRef.current?.say(
-          chName,
+
+        client.say(
+          _chan,
           mvp
             ? `🤖 El MVP es @${mvp.user} con -$${mvp.score}. ¡Respeten al Sugar Daddy! 👑`
-            : `🤖 Nadie ha donado. Humildad máxima en el chat. 🐽`,
+            : `🤖 Nadie ha donado. Humildad máxima en el chat. 🐽`
         );
+        return;
       }
 
       if (command === "!status" || command === "!info") {
         const curr = levelRef.current;
         const price = currentPriceRef.current;
 
-        const statusMsg = `🤖 [ESTADO DEL SISTEMA]: 
-          💰 Precio Actual: $${price} MXN | 
-          📊 Fase: ${curr.name} | 
-          📉 DESCUENTOS: Sub -$${curr.rates.sub} | Prime -$${curr.rates.prime} | 100 Bits -$${curr.rates.bits100} | 500 Bits -$${curr.rates.bits500} | 1000 Bits -$${curr.rates.bits1000}. 
-          ¡A darle, mortales! 🐷`;
+        const statusMsg = `🤖 [ESTADO DEL SISTEMA]: 💰 Precio Actual: $${price} MXN | 📊 Fase: ${curr.name} | 📉 DESCUENTOS: Sub -$${curr.rates.sub} | Prime -$${curr.rates.prime} | 100 Bits -$${curr.rates.bits100} | 500 Bits -$${curr.rates.bits500} | 1000 Bits -$${curr.rates.bits1000}. ¡A darle, mortales! 🐷`;
 
-        clientRef.current?.say(chName, statusMsg);
+        client.say(_chan, statusMsg);
+        return;
       }
 
       if (command === "!joaquin") {
@@ -450,13 +457,21 @@ function AdminContent() {
           "¿Sabiduría? Solo tengo una verdad: el precio baja si sueltas los bits. Todo lo demás es ruido humano. 💅",
           "Me convertí en juguete para burlarme de sus costumbres desde su propia estantería. Los observo mientras duermen. 🐽",
         ];
-        clientRef.current?.say(
-          chName,
-          `🤖 ${wisdom[Math.floor(Math.random() * wisdom.length)]} 🐷`,
+
+        client.say(
+          _chan,
+          `🤖 ${wisdom[Math.floor(Math.random() * wisdom.length)]} 🐷`
         );
+        return;
       }
 
       if (command === "!equipo") {
+        console.log("!equipo ejecutado", {
+          at: new Date().toISOString(),
+          channel: _chan,
+          user: _tags?.username,
+        });
+
         const now = Date.now();
         const cooldownMs = 5 * 60 * 1000;
         const timeElapsed = now - lastPokeExecutionRef.current;
@@ -466,9 +481,9 @@ function AdminContent() {
           const mins = Math.floor(remainingSeconds / 60);
           const secs = remainingSeconds % 60;
 
-          clientRef.current?.say(
-            chName,
-            `🤖 [ENFRIAMIENTO]: ¡Cálmense, mortales! El escáner de la Pokédex se está recargando. Esperen ${mins}m ${secs}s. 🐽`,
+          client.say(
+            _chan,
+            `🤖 [ENFRIAMIENTO]: ¡Cálmense, mortales! El escáner de la Pokédex se está recargando. Esperen ${mins}m ${secs}s. 🐽`
           );
           return;
         }
@@ -476,29 +491,57 @@ function AdminContent() {
         lastPokeExecutionRef.current = Date.now();
 
         try {
-          const res = await fetch("/api/pokemon/team");
+          const res = await fetch("/api/pokemon/team", {
+            method: "GET",
+            cache: "no-store",
+          });
+
+          console.log("Respuesta /api/pokemon/team", {
+            ok: res.ok,
+            status: res.status,
+          });
+
+          if (!res.ok) {
+            throw new Error(`GET /api/pokemon/team failed with ${res.status}`);
+          }
+
           const data = await res.json();
-          const teamArray = data.team || [];
+          const teamArray = Array.isArray(data.team) ? data.team : [];
 
-          const teamString = teamArray
-            .filter((p: any) => p.name && p.name !== "Vacío")
-            .map((p: any) => p.name)
-            .join(", ");
+          const validTeam = teamArray.filter(
+            (p: any) => p?.name && p.name !== "Vacío"
+          );
 
-          await fetch("/api/pokemon/show-team", { method: "POST" });
+          await fetch("/api/pokemon/show-team", {
+            method: "POST",
+            cache: "no-store",
+          });
 
-          const finalMsg = teamString
-            ? `🤖 [SISTEMA]: Escaneando señales... Equipo de Luis: ${teamString} 🐽`
-            : `🤖 [SISTEMA]: ¡Sin datos en el escáner! Luis está jugando solo. 🐽`;
+          const finalMsg =
+            validTeam.length > 0
+              ? `🤖 [SISTEMA]: Escaneando señales... Equipo de Luis: ${validTeam
+                  .map((p: any) => p.name)
+                  .join(", ")} 🐽`
+              : `🤖 [SISTEMA]: ¡Sin datos en el escáner! Luis está jugando solo. 🐽`;
 
-          clientRef.current?.say(chName, finalMsg);
+          client.say(_chan, finalMsg);
         } catch (err) {
           console.error("Error en comando equipo:", err);
+          client.say(
+            _chan,
+            "🤖 [ERROR]: El escáner de la Pokédex no pudo leer el equipo en este momento. 🐽"
+          );
         }
+
+        return;
       }
-    });
+    };
+
+    client.on("message", handleMessage);
 
     return () => {
+      client.removeListener("message", handleMessage);
+
       pusherClient.unsubscribe("auction-channel");
       pusherClient.unsubscribe("game-channel");
 
