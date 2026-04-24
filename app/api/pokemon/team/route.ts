@@ -27,9 +27,16 @@ export async function POST(req: Request) {
 export async function GET() {
   try {
     const data = await redis.get("pokemon_team");
-    const team = data ? (typeof data === "string" ? JSON.parse(data) : data) : Array(6).fill({ name: "Vacío", sprite: "" });
+    const team = data
+      ? (typeof data === "string" ? JSON.parse(data) : data)
+      : Array(6).fill({ name: "Vacío", sprite: "" });
+
     return NextResponse.json({ team });
   } catch (error) {
-    return NextResponse.json({ team: [] }, { status: 500 });
+    console.error("Error en GET team:", error);
+    return NextResponse.json(
+      { error: "Failed to load team" },
+      { status: 500 }
+    );
   }
 }
