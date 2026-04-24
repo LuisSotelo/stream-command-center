@@ -7,7 +7,16 @@ export const authOptions: NextAuthOptions = {
     TwitchProvider({
       clientId: process.env.TWITCH_CLIENT_ID!,
       clientSecret: process.env.TWITCH_CLIENT_SECRET!,
-    }),
+      authorization: {
+        params: {
+          scope: [
+            "channel:read:subscriptions",
+            "bits:read",
+            "moderator:read:followers",
+          ].join(" "),
+        },
+      },
+    })
   ],
   callbacks: {
     async signIn({ profile }) {
