@@ -12,6 +12,7 @@ export const authOptions: NextAuthOptions = {
         params: {
           scope: [
             "openid",
+            "user:read:email",
             "channel:read:subscriptions",
             "bits:read",
             "moderator:read:followers",
